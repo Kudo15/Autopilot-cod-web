@@ -79,7 +79,7 @@ constraints:
   - "Dùng uv (không pip toàn cục); giữ .python-version trỏ 3.13"
   - "Không sửa checks/, PLAN.md, docs/MISSION.md"
 acceptance:
-  - "uv run uvicorn ... khởi động được backend ở 127.0.0.1:8000"
+  - "uv run uvicorn backend.app.main:app --host 127.0.0.1 --port <cổng> khởi động được (app nằm ở backend/app/main.py — đây là hợp đồng để trọng tài khởi động được)"
   - "GET /api/health trả HTTP 200 JSON có trạng thái ok"
   - "GET /api/articles trả HTTP 200 và một mảng JSON"
   - "File SQLite được tạo thật và có ít nhất một bảng"
