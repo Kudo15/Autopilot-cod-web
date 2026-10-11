@@ -1,0 +1,324 @@
+/* Vũ Học AI Radar v1.0 — Phase 2: app shell, dark/light theme, 3 trạng thái */
+
+:root,
+:root[data-theme='dark'] {
+  --bg: #101418;
+  --bg-panel: #1a2129;
+  --bg-hover: #232d38;
+  --text: #e8edf2;
+  --text-muted: #93a1b0;
+  --border: #2c3742;
+  --accent: #4fc3f7;
+  --accent-contrast: #0b1218;
+  --error-bg: #3a1d22;
+  --error-text: #ffb4ab;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f5f7fa;
+  --bg-panel: #ffffff;
+  --bg-hover: #e9eef4;
+  --text: #1c2733;
+  --text-muted: #5c6b7a;
+  --border: #d5dde5;
+  --accent: #0277bd;
+  --accent-contrast: #ffffff;
+  --error-bg: #fdecec;
+  --error-text: #b3261e;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ---------- Bố cục tổng thể ---------- */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+}
+
+/* ---------- Header ---------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.brand-badge {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.brand-title {
+  font-size: 1.1rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.brand-version {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.sidebar-toggle {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 1.1rem;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.theme-toggle {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  padding: 12px 8px;
+  align-self: flex-start;
+}
+
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.92rem;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.sidebar-item:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-item-active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.sidebar-item-active:hover {
+  background: var(--accent);
+}
+
+/* ---------- Main content ---------- */
+
+.app-main {
+  flex: 1;
+  padding: 24px;
+  min-width: 0;
+}
+
+.group-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.group-view-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.state-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ---------- 3 trạng thái ---------- */
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 320px;
+  padding: 32px 24px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  background: var(--bg-panel);
+}
+
+.state p {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.state-hint {
+  color: var(--text-muted) !important;
+  font-size: 0.85rem !important;
+}
+
+.state-icon {
+  font-size: 2.2rem;
+}
+
+.state-error {
+  background: var(--error-bg);
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+
+.state-error .state-hint {
+  color: var(--error-text);
+  opacity: 0.8;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+/* ---------- Responsive (mobile) ---------- */
+
+@media (max-width: 760px) {
+  .sidebar-toggle {
+    display: inline-block;
+  }
+
+  .brand-version {
+    display: none;
+  }
+
+  .app-body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+
+  .sidebar-open {
+    display: block;
+  }
+
+  .app-main {
+    padding: 16px;
+  }
+
+  .theme-toggle {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+}
