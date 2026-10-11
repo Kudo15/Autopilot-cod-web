@@ -102,6 +102,7 @@ acceptance:
   - "Đủ 12 bảng trong SQLite thật"
   - "Có các cột last_verified, valid_until, account_required, card_required, context_window, supports_vision, supports_tools, supports_json ở nơi hợp lý"
   - "Chạy migration lần hai vẫn exit code 0 và số bản ghi SAMPLE không tăng"
+  - "HỢP ĐỒNG chạy: migration bằng `uv run python -m backend.app.migrate` và seed bằng `uv run python -m backend.app.seed` (cả hai idempotent, exit 0) — đây là đường để trọng tài đo, không phải gợi ý"
 verify_cmd: "python checks/p4.py"
 ```
 
