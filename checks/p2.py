@@ -45,7 +45,7 @@ for label, pat in (("loading", r"loading|dang tai|đang tải"),
             f"KHONG thay trang thai {label} trong ma nguon")
 
 # build van xanh + nhan co trong bundle that
-rc, out = L.run("npm run build", timeout=900)
+rc, out = L.fresh_build()
 L.check(rc == 0, "npm run build exit 0", f"npm run build FAIL (exit {rc}): {L.tail(out, 700)}")
 
 dist = L.dist_text()

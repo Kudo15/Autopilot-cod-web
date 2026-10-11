@@ -121,6 +121,21 @@ def run(cmd: str, timeout: int = 900, cwd: Path | None = None) -> tuple[int, str
         return 127, f"khong chay duoc: {type(exc).__name__}: {exc}"
 
 
+def fresh_build(timeout: int = 900) -> tuple[int, str]:
+    """XÓA dist/ rồi mới build.
+
+    Vì sao: build lỗi thì dist CŨ vẫn nằm lại, nên cổng chỉ kiểm "có dist" sẽ bị qua mặt bằng
+    artefact của lần build trước (đo thật 11/10: phá source -> build exit 1 nhưng dist cũ vẫn còn).
+    Xóa trước khi build để chắc artefact là kết quả của SOURCE HIỆN TẠI — đúng yêu cầu
+    "output build là kết quả của source vừa chỉnh sửa" trong safety gate của prompt.
+    """
+    import shutil
+    d = ROOT / "dist"
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+    return run("npm run build", timeout=timeout)
+
+
 def tail(text: str, n: int = 800) -> str:
     text = (text or "").strip()
     return text[-n:] if len(text) > n else text

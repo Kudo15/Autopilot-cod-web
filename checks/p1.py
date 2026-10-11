@@ -36,7 +36,7 @@ L.check(L.exists("node_modules"), "da co node_modules (npm install da chay)",
         "CHUA co node_modules -> phai chay npm install truoc khi ket thuc phase")
 
 # --- 4. build that
-rc, out = L.run("npm run build", timeout=900)
+rc, out = L.fresh_build()
 L.check(rc == 0, "npm run build exit 0", f"npm run build FAIL (exit {rc}): {L.tail(out, 700)}")
 
 # --- 5. dist that
