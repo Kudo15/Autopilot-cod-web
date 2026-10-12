@@ -31,15 +31,15 @@ ARTICLES_COLUMNS = (
 
 
 def init_db() -> Path:
-    """Tạo thư mục data và schema nếu chưa có (idempotent). Trả về đường dẫn DB."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    try:
-        conn.executescript(SCHEMA)
-        conn.commit()
-    finally:
-        conn.close()
-    return DB_PATH
+    """Khởi tạo schema đầy đủ (Phase 4: migration 12 bảng, idempotent).
+
+    Giữ nguyên hành vi cũ (trả về đường dẫn DB) nhưng nâng cấp bảng
+    articles của Phase 3 và tạo 12 bảng nghiệp vụ theo MISSION mục 5.
+    Không bao giờ xóa dữ liệu có sẵn.
+    """
+    from .migrate import apply_migration
+
+    return apply_migration()
 
 
 def get_connection() -> sqlite3.Connection:
