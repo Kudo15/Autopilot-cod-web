@@ -125,6 +125,7 @@ acceptance:
   - "Mã nguồn frontend gọi /api/articles (không nhúng dữ liệu giả vào bundle)"
   - "Khi backend chạy, /api/articles trả bài viết lấy từ DB (không phải mảng rỗng cứng)"
   - "npm run build exit code 0 và bundle không chứa chuỗi giống API key"
+  - "HỢP ĐỒNG chạy để trọng tài đo: backend phải lên được bằng `uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000` và vite dev bằng `npm run dev`; dữ liệu qua proxy phải GIỐNG gọi trực tiếp backend và không rỗng"
 verify_cmd: "python checks/p5.py"
 ```
 
