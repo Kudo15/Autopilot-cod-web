@@ -5,7 +5,9 @@ import asyncio
 from contextlib import ExitStack, closing
 from datetime import datetime
 import json
+import os
 from pathlib import Path
+import secrets
 import sqlite3
 import tempfile
 import unittest
@@ -92,6 +94,12 @@ class ImportEndpointTests(unittest.TestCase):
         self.connection = sqlite3.connect(":memory:", check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.import_connection = _NonClosingConnection(self.connection)
+        # Route import được bảo vệ bởi ADMIN_TOKEN (P8b) — test dùng token riêng,
+        # không hardcode giá trị secret nào trong mã nguồn.
+        self.admin_token = "unit-" + secrets.token_hex(16)
+        self._admin_env = patch.dict(os.environ, {"ADMIN_TOKEN": self.admin_token})
+        self._admin_env.start()
+        self.addCleanup(self._admin_env.stop)
         self.connection.executescript(
             """
             PRAGMA foreign_keys = ON;
@@ -132,7 +140,10 @@ class ImportEndpointTests(unittest.TestCase):
             {
                 "type": "http",
                 "method": "POST",
-                "headers": [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
+                "headers": [
+                    (b"content-type", f"multipart/form-data; boundary={boundary}".encode()),
+                    (b"authorization", f"Bearer {self.admin_token}".encode()),
+                ],
             },
             receive,
         )

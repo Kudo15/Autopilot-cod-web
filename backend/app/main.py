@@ -13,8 +13,10 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 
+from .auth import require_admin
 from .database import ARTICLES_COLUMNS, get_connection, init_db
 from .ingest.importers import ImportValidationError, MAX_UPLOAD_BYTES, parse_upload, persist_import
+from .migrate import VERIFICATION_STATUS
 
 # --- Phase 7: Model/Provider Explorer — hợp đồng public read-only ------------
 #: Tập free_status hợp lệ theo MISSION (khớp CHECK constraint của provider_models).
@@ -296,6 +298,7 @@ def _multipart_fields(content_type: str, body: bytes) -> tuple[str, str, bytes]:
 @app.post("/api/admin/import")
 async def import_file(request: Request) -> dict[str, int]:
     """Import a manual Markdown, CSV or JSON upload as DRAFT records."""
+    require_admin(request)
     body = await request.body()
     if len(body) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="upload exceeds the 1 MB limit")
@@ -312,3 +315,285 @@ async def import_file(request: Request) -> dict[str, int]:
             conn.close()
     except (ImportValidationError, UnicodeDecodeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+# --- Phase 8b: ranh giới admin (ADMIN_TOKEN) + workflow duyệt/xác minh --------
+# Mọi route /api/admin/* gọi require_admin() ở dòng ĐẦU handler, TRƯỚC khi chạm DB.
+# Public API không bao giờ trả raw/provenance/registry/admin field nào.
+
+#: Cột nội bộ DUY NHẤT trả về từ GET /api/admin/sources.
+ADMIN_SOURCE_FIELDS = (
+    "source_id", "name", "type", "url", "collection_method",
+    "priority", "status", "last_checked_at", "data_origin", "created_at",
+)
+
+#: Cột nội bộ DUY NHẤT trả về từ GET /api/admin/reviews (kèm trạng thái bài).
+ADMIN_REVIEW_FIELDS = (
+    "review_id", "article_id", "article_status", "review_status", "reviewer_note",
+    "ranking_suggestion", "content_safety", "reviewed_at", "data_origin", "created_at",
+)
+
+#: Hành động duyệt bài hợp lệ (allowlist — DRAFT không phải hành động của editor).
+ARTICLE_REVIEW_ACTIONS = ("PENDING_REVIEW", "REJECTED", "PUBLISHED")
+
+#: Trạng thái xác minh hợp lệ — lấy từ MỘT nguồn duy nhất (hằng số schema, P4),
+#: nên không thể lệch khỏi CHECK constraint của verification_records.
+VERIFICATION_STATUSES = VERIFICATION_STATUS
+
+#: Bảng chuyển trạng thái duyệt: {trạng thái hiện tại: {hành động: trạng thái mới}}.
+#: articles.article_status CHECK chỉ cho (DRAFT, PENDING_REVIEW, PUBLISHED) nên
+#: REJECTED = quay về DRAFT; lý do + trạng thái REJECTED nằm ở editorial_reviews.
+_REVIEW_TRANSITIONS: dict[str, dict[str, str]] = {
+    "DRAFT": {"PENDING_REVIEW": "PENDING_REVIEW"},
+    "PENDING_REVIEW": {"PUBLISHED": "PUBLISHED", "REJECTED": "DRAFT"},
+    "PUBLISHED": {},
+}
+
+#: SELECT tường minh cho bản ghi duyệt + trạng thái bài (không SELECT *).
+_ADMIN_REVIEWS_SELECT = """
+SELECT r.id AS review_id,
+       r.article_id AS article_id,
+       a.article_status AS article_status,
+       r.review_status AS review_status,
+       r.reviewer_note AS reviewer_note,
+       r.ranking_suggestion AS ranking_suggestion,
+       r.content_safety AS content_safety,
+       r.reviewed_at AS reviewed_at,
+       r.data_origin AS data_origin,
+       r.created_at AS created_at
+FROM editorial_reviews AS r
+LEFT JOIN articles AS a ON a.id = r.article_id
+ORDER BY r.id DESC
+"""
+
+
+async def _json_object(request: Request) -> dict:
+    """Đọc body JSON dạng object; mọi hình dạng khác -> 422."""
+    try:
+        payload = await request.json()
+    except ValueError as error:  # json.JSONDecodeError, body rỗng, ...
+        raise HTTPException(status_code=422, detail="request body must be a JSON object") from error
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="request body must be a JSON object")
+    return payload
+
+
+def _require_body_keys(payload: dict, allowed: tuple[str, ...]) -> None:
+    """Chỉ cho phép đúng các field đã khai báo của một body admin."""
+    unknown = sorted(set(payload) - set(allowed))
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown fields: {', '.join(unknown)}")
+
+
+def _opt_text(value: object, field: str) -> str | None:
+    """Trường text tuỳ chọn: None/chuỗi rỗng -> None; không phải chuỗi -> 422."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail=f"{field} must be a string")
+    text = value.strip()
+    return text or None
+
+
+def _has_real_pending_review(conn, article_id: int) -> bool:
+    """Bài đã có bước PENDING_REVIEW xác thực (bản ghi thật) chưa."""
+    row = conn.execute(
+        """SELECT 1 FROM editorial_reviews
+           WHERE article_id = ?
+             AND review_status = 'PENDING_REVIEW'
+             AND (data_origin IS NULL OR data_origin != 'SAMPLE')
+           LIMIT 1""",
+        (article_id,),
+    ).fetchone()
+    return row is not None
+
+
+@app.get("/api/admin/sources")
+def admin_sources(request: Request) -> list[dict]:
+    """Registry nguồn nội bộ — chỉ cho request đã xác thực (gồm cả row SAMPLE)."""
+    require_admin(request)
+    columns = ", ".join(ADMIN_SOURCE_FIELDS)
+    conn = get_connection()
+    try:
+        rows = conn.execute(f"SELECT {columns} FROM sources ORDER BY source_id").fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/admin/reviews")
+def admin_reviews(request: Request) -> list[dict]:
+    """Bản ghi duyệt + trạng thái bài tương ứng — chỉ cho request đã xác thực."""
+    require_admin(request)
+    conn = get_connection()
+    try:
+        rows = conn.execute(_ADMIN_REVIEWS_SELECT).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/admin/articles/{article_id}/review")
+async def admin_article_review(article_id: int, request: Request) -> dict:
+    """Ghi một bước duyệt bài đã xác thực: PENDING_REVIEW / REJECTED / PUBLISHED."""
+    require_admin(request)
+    payload = await _json_object(request)
+    _require_body_keys(payload, ("action", "note"))
+    action = payload.get("action")
+    if action not in ARTICLE_REVIEW_ACTIONS:
+        raise HTTPException(status_code=422, detail=f"invalid action: {action!r}")
+    note = _opt_text(payload.get("note"), "note")
+    conn = get_connection()
+    try:
+        return _apply_article_review(conn, article_id, action, note)
+    finally:
+        conn.close()
+
+
+def _apply_article_review(conn, article_id: int, action: str, note: str | None) -> dict:
+    """Chuyển trạng thái duyệt trong MỘT transaction; lỗi -> rollback sạch."""
+    row = conn.execute(
+        "SELECT id, article_status, data_origin FROM articles WHERE id = ?",
+        (article_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"article {article_id} does not exist")
+    if (row["data_origin"] or "REAL") == "SAMPLE":
+        raise HTTPException(
+            status_code=409, detail="SAMPLE articles cannot be reviewed or published"
+        )
+
+    current = row["article_status"] or "DRAFT"
+    new_status = _REVIEW_TRANSITIONS.get(current, {}).get(action)
+    if new_status is None:
+        raise HTTPException(
+            status_code=409, detail=f"cannot {action} an article in state {current}"
+        )
+    # Xuất bản chỉ sau một bước PENDING_REVIEW có xác thực đã tồn tại trong sổ duyệt.
+    if action == "PUBLISHED" and not _has_real_pending_review(conn, article_id):
+        raise HTTPException(
+            status_code=409,
+            detail="publish requires an authenticated PENDING_REVIEW step first",
+        )
+
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    data_origin = row["data_origin"] or "REAL"
+    own_transaction = not conn.in_transaction
+    try:
+        if own_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE articles SET article_status = ? WHERE id = ?", (new_status, article_id)
+        )
+        if action == "PUBLISHED":
+            # Ghi mốc xuất bản THẬT chỉ khi chưa có (không viết lại lịch sử).
+            conn.execute(
+                "UPDATE articles SET published_at = COALESCE(published_at, ?) WHERE id = ?",
+                (reviewed_at, article_id),
+            )
+        cursor = conn.execute(
+            """INSERT INTO editorial_reviews
+               (article_id, review_status, reviewer_note, reviewed_at, data_origin)
+               VALUES (?, ?, ?, ?, ?)""",
+            (article_id, action, note, reviewed_at, data_origin),
+        )
+        review_id = cursor.lastrowid
+        if own_transaction:
+            conn.commit()
+    except Exception:
+        if own_transaction:
+            conn.rollback()
+        raise
+    return {
+        "review_id": review_id,
+        "article_id": article_id,
+        "article_status": new_status,
+        "review_status": action,
+        "reviewer_note": note,
+        "reviewed_at": reviewed_at,
+        "data_origin": data_origin,
+    }
+
+
+@app.post("/api/admin/provider-models/{provider_model_id}/verification")
+async def admin_provider_model_verification(provider_model_id: int, request: Request) -> dict:
+    """Ghi một bản xác minh đã xác thực — không bao giờ bịa quota hay freshness."""
+    require_admin(request)
+    payload = await _json_object(request)
+    _require_body_keys(payload, ("status", "evidence", "note", "method"))
+    status = payload.get("status")
+    if status not in VERIFICATION_STATUSES:
+        raise HTTPException(status_code=422, detail=f"invalid verification status: {status!r}")
+    evidence = _opt_text(payload.get("evidence"), "evidence")
+    note = _opt_text(payload.get("note"), "note")
+    if evidence is None and note is None:
+        raise HTTPException(
+            status_code=422, detail="verification requires explicit evidence or note"
+        )
+    method = _opt_text(payload.get("method"), "method") or "manual"
+    conn = get_connection()
+    try:
+        return _apply_verification(conn, provider_model_id, status, evidence, note, method)
+    finally:
+        conn.close()
+
+
+def _apply_verification(
+    conn,
+    provider_model_id: int,
+    status: str,
+    evidence: str | None,
+    note: str | None,
+    method: str,
+) -> dict:
+    """Ghi bản xác minh + cập nhật trạng thái, không đụng quota/rate limit."""
+    row = conn.execute(
+        """SELECT id, data_origin, verification_status, last_verified, daily_quota, rate_limit
+           FROM provider_models WHERE id = ?""",
+        (provider_model_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail=f"provider_model {provider_model_id} does not exist"
+        )
+    if (row["data_origin"] or "REAL") == "SAMPLE":
+        raise HTTPException(status_code=409, detail="SAMPLE provider_models cannot be verified")
+
+    verified_at = datetime.now(timezone.utc).isoformat()
+    # Chỉ VERIFIED mới gắn mốc xác minh MỚI; trạng thái khác giữ nguyên last_verified
+    # hiện có (không bịa freshness). daily_quota/rate_limit tuyệt đối không bị đụng tới.
+    last_verified = verified_at if status == "VERIFIED" else row["last_verified"]
+    data_origin = row["data_origin"] or "REAL"
+
+    own_transaction = not conn.in_transaction
+    try:
+        if own_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE provider_models SET verification_status = ?, last_verified = ? WHERE id = ?",
+            (status, last_verified, provider_model_id),
+        )
+        cursor = conn.execute(
+            """INSERT INTO verification_records
+               (provider_model_id, offer_id, verification_status, method, evidence,
+                note, verified_at, data_origin)
+               VALUES (?, NULL, ?, ?, ?, ?, ?, ?)""",
+            (provider_model_id, status, method, evidence, note, verified_at, data_origin),
+        )
+        record_id = cursor.lastrowid
+        if own_transaction:
+            conn.commit()
+    except Exception:
+        if own_transaction:
+            conn.rollback()
+        raise
+    return {
+        "verification_record_id": record_id,
+        "provider_model_id": provider_model_id,
+        "verification_status": status,
+        "last_verified": last_verified,
+        "evidence": evidence,
+        "note": note,
+        "verified_at": verified_at,
+        "data_origin": data_origin,
+    }
