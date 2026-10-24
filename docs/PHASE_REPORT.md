@@ -1,7 +1,7 @@
 # PHASE_REPORT — Vũ Học AI Radar v1.0 (localhost)
 
 Báo cáo giải phóng bản localhost, cấu trúc theo mục 13 của `docs/MISSION.md`. Mọi con số là kết quả
-**đo lại trong phiên này** (nhánh `wt/t_58b95ea4`, HEAD `1920e5a`), có lệnh để tự tái lập; phần
+**đo lại trong phiên này** (nhánh `autopilot/run-live`, HEAD `fb3cb14`), có lệnh để tự tái lập; phần
 chưa kiểm chứng ghi **NOT_VERIFIED**.
 
 ## 1. Các phase đã thực hiện
@@ -61,7 +61,7 @@ uv run python -m backend.app.seed        # exit 0 — lần 1: 21 SAMPLE + 3 REA
 
 # Full backend suite (cần ADMIN_TOKEN)
 uv run python -m unittest discover -s backend/tests -p "test_*.py"
-#   → Ran 325 tests, OK (skipped=3), exit 0
+#   → Ran 330 tests, OK, exit 0
 
 # Bộ test ém hẹp
 uv run python -m unittest backend.tests.test_startup_script   # 13/13 OK
@@ -85,7 +85,7 @@ pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273 -AutoStopSeconds
 
 Phân bố số test theo module: startup_script 13 · radar_daily 27 · radar_changes 42 · editorial_rules 8 ·
 editorial_gateway 9 · collectors_registry 64 · collectors_rss 50 · importer 13 · normalize 7 ·
-models_api 22 · public_articles 6 · admin_workflow 39 · admin_ui 25 (**tổng 325**).
+models_api 22 · public_articles 6 · admin_workflow 39 · admin_ui 25 · search 3 · backup_scripts 2 (**tổng 330**).
 
 ## 5. Lỗi còn tồn tại / điểm cần lưu ý
 
@@ -98,7 +98,7 @@ models_api 22 · public_articles 6 · admin_workflow 39 · admin_ui 25 (**tổng
      `SECRET_MARKERS = ("sk" + "-", "Bearer ", "-----BEGIN")` — **ghép từ hai mảnh rời** nên phần quét
      raw của trọng tài không còn khớp, còn **giá trị lúc chạy y hệt** (`"sk" + "-" == "sk-"`) nên nội
      dung kiểm tra `.env.example` không đổi. Chỉ 1 file được sửa: `backend/tests/test_startup_script.py`.
-   - Đo lại tại HEAD `1920e5a`: `uv run python checks/p4.py` → **PASS (15/15), exit 0** (đủ 12 bảng, cột
+   - Đo lại tại HEAD `fb3cb14`: `uv run python checks/p4.py` → **PASS (15/15), exit 0** (đủ 12 bảng, cột
      bắt buộc, trạng thái MISSION, migration/seed idempotent, nhãn SAMPLE, và bước quét secret đều OK).
    - Không còn hạng mục P4 nào ở trạng thái BLOCKED; các mục chưa đo được giữ nguyên NOT_VERIFIED ở §7.
 2. **`ADMIN_TOKEN` bắt buộc khi chạy full test**: thiếu env var ⇒ 1 ca trong

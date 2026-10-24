@@ -1,6 +1,6 @@
 # QA_REPORT — Kiểm thử và xác minh Vũ Học AI Radar v1.0 (localhost)
 
-Báo cáo chất lượng của bản **localhost** tại nhánh `wt/t_58b95ea4`, HEAD `1920e5a`
+Báo cáo chất lượng của bản **localhost** tại nhánh `autopilot/run-live`, HEAD `fb3cb14`
 (2026-10-25 05:46 +0700). Toàn bộ lệnh bên dưới được **chạy lại từ đầu trong phiên này**; kèm lệnh
 để tự tái lập. Mọi hạng mục không thể kiểm chứng được ghi rõ **NOT_VERIFIED** hoặc **BLOCKED** — không
 bao giờ ghi PASS cho thứ chưa đo.
@@ -15,7 +15,7 @@ bao giờ ghi PASS cho thứ chưa đo.
 | uv | `0.12.17` |
 | Python | 3.13 (qua `uv run --no-sync`) |
 | PowerShell | `pwsh` 7.x |
-| Git HEAD | `1920e5a` — nhánh `wt/t_58b95ea4` |
+| Git HEAD | `fb3cb14` — nhánh `autopilot/run-live` |
 | Admin token | biến môi trường test sinh ngẫu nhiên (không hardcode) |
 
 ## 2. Khung đánh giá
@@ -32,7 +32,7 @@ bao giờ ghi PASS cho thứ chưa đo.
 |---|---|---|
 | 1 | `uv run python -m backend.app.migrate` | exit 0 — 12 bảng nghiệp vụ, idempotent |
 | 2 | `uv run python -m backend.app.seed` (×2) | lần 1: 21 SAMPLE + 1 REAL; lần 2: 0 mới (idempotent) |
-| 3 | Full back-end: `unittest discover -s backend/tests -p "test_*.py"` | exit 0 — **Ran 325 tests, OK** |
+| 3 | Full back-end: `unittest discover -s backend/tests -p "test_*.py"` | exit 0 — **Ran 330 tests, OK** |
 | 3a | — `test_startup_script` | **13/13** OK |
 | 3b | — `test_radar_daily` | **27/27** OK |
 | 3c | — `test_editorial_gateway` | **9/9** OK |
@@ -90,7 +90,7 @@ uv run --no-sync python checks/p5.py   -> ket qua phase: PASS (11/11)   exit 0
   `SECRET_MARKERS = ("sk" + "-", "Bearer ", "-----BEGIN")` — **ghép từ hai mảnh rời** nên quét raw
   không còn trùng, còn **giá trị lúc chạy y hệt** (`"sk" + "-" == "sk-"`). Chỉ 1 file được sửa:
   `backend/tests/test_startup_script.py`; `checks/` và `.env.example` không đổi.
-- Đo lại tại HEAD `1920e5a`: `uv run --no-sync python checks/p4.py` → **PASS (15/15), exit 0** —
+- Đo lại tại HEAD `fb3cb14`: `uv run --no-sync python checks/p4.py` → **PASS (15/15), exit 0** —
   đủ 12 bảng, cột bắt buộc, trạng thái MISSION, migration/seed idempotent, nhãn SAMPLE, quét secret OK.
 - Không còn hạng mục P4 nào ở trạng thái BLOCKED; các mục live (cổng mặc định, browser, live feed,
   live gateway) vẫn **NOT_VERIFIED** — xem mục 6.
@@ -99,10 +99,10 @@ uv run --no-sync python checks/p5.py   -> ket qua phase: PASS (11/11)   exit 0
 
 ```
 uv run --no-sync python -m unittest discover -s backend/tests -p "test_*.py"
-#   Ran 325 tests in 3.447s — OK   (cần ADMIN_TOKEN trong environment)
+#   Ran 330 tests — OK   (cần ADMIN_TOKEN trong environment)
 ```
 
-Phân bố theo module (tổng 325): startup_script 13 · radar_daily 27 · radar_changes 42 ·
+Phân bố theo module (tổng 330): startup_script 13 · radar_daily 27 · radar_changes 42 ·
 editorial_rules 8 · editorial_gateway 9 · collectors_registry 64 · collectors_rss 50 · importer 13 ·
 normalize 7 · models_api 22 · public_articles 6 · admin_workflow 39 · admin_ui 25.
 
@@ -176,7 +176,7 @@ thiết kế `.env.example` rỗng; script không hề tự điền secret.
 
 ## 7. Kết luận cho bản localhost
 
-- Toàn bộ chức năng **local** đã đo đều hoạt động: test 325/325 OK, build exit 0, startup thật exit 0
+- Toàn bộ chức năng **local** đã đo đều hoạt động: test 330/330 OK, build exit 0, startup thật exit 0
   ở cổng tùy chọn, migration/seed idempotent, dữ liệu REAL/SAMPLE phân định rõ. Toàn bộ 5 cổng
   `checks/p1.py…p5.py` đều **PASS** (p4 nay **15/15** sau khi sửa dương tính giả `sk-` ở `c44adee`).
 - **Chưa kiểm chứng**: cổng mặc định, trình duyệt, live feed, live gateway — ghi NOT_VERIFIED.
@@ -184,7 +184,7 @@ thiết kế `.env.example` rỗng; script không hề tự điền secret.
 ## 8. Danh sách tài liệu của bản release localhost
 
 Cả 6 file đều được tạo trong task 017 (nhánh `wt/t_5fd6d5ec`); hai báo cáo này đã được refresh ở
-task 019 (HEAD `1920e5a`):
+task 019 (HEAD `fb3cb14`):
 
 - `README_LOCAL.md` — hướng dẫn chạy + kết quả đo + xử lý sự cố
 - `docs/ARCHITECTURE.md` — kiến trúc hai nửa, ranh giới dữ liệu

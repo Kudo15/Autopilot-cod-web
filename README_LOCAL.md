@@ -61,7 +61,7 @@ pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273     # đổi c�
 |---|---|
 | `uv run python -m backend.app.migrate` | exit 0 — 12 bảng nghiệp vụ sẵn sàng |
 | `uv run python -m backend.app.seed` | exit 0 — lần 1: 21 bản ghi SAMPLE + 3 bản ghi REAL kế thừa; lần 2: 0 bản ghi mới (idempotent) |
-| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 325 tests, OK (skipped=3)** |
+| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 330 tests, OK** |
 | `npm run build` | exit 0 — `dist/index.html` 0.47 kB, CSS 11.20 kB, JS 218.56 kB (kèm cảnh báo Node 22.11) |
 | `pwsh -File scripts/dev.ps1 -Check -BackendPort 8123 -FrontendPort 5273` | exit 0 — cổng trống, sẵn sàng |
 | `pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273 -AutoStopSeconds 25` | exit 0 — migration OK, backend + frontend **UP**, dừng sạch |
