@@ -28,17 +28,18 @@ hợp đồng feed công khai (checks/p5.py) có nguồn thật thay vì mảng 
   dấu dữ liệu này là "unverified" nên nó KHÔNG được dùng làm dữ liệu xác
   minh cho provider/model.
 - Provenance của bản ghi nằm trong raw_items (không lộ ra API công khai):
-  canonical_url + provenance + content_hash (sha256 nội dung nguyên văn).
-- Idempotent: chỉ chèn khi chưa có bài REAL nào cùng canonical_url; chạy lại
-  không nhân bản và không chạm dữ liệu SAMPLE/thật khác.
+  canonical_url + normalized_title + content_hash (qua normalize_item) + provenance.
+- Idempotent: chỉ chèn khi chưa có bài REAL/PUBLISHED kế thừa tương ứng; chạy lại
+  không nhân bản và không chạm dữ liệu SAMPLE/bản nháp DRAFT hay dữ liệu thật khác.
 """
 from __future__ import annotations
 
-import hashlib
 import sqlite3
 import sys
 
+from . import database
 from .database import get_connection
+from .ingest.normalize import NormalizedItem, normalize_item
 from .migrate import apply_migration
 
 #: id ổn định cho các bảng AUTOINCREMENT — tách hẳn vùng id của dữ liệu thật.
@@ -268,12 +269,38 @@ def _count_sample(conn: sqlite3.Connection, table: str) -> int:
         return 0
 
 
-def _has_real_legacy_article(conn: sqlite3.Connection) -> bool:
-    """Đã có bài REAL kế thừa (cùng URL công khai) chưa — lớp idempotent."""
+def _normalize_legacy_item() -> NormalizedItem:
+    return normalize_item(
+        {
+            "title": _REAL_LEGACY_TITLE,
+            "url": _REAL_LEGACY_URL,
+            "content": _REAL_LEGACY_BODY,
+        },
+        _REAL_LEGACY_SOURCE_ID,
+        _REAL_LEGACY_PUBLISHED_AT,
+    )
+
+
+def _has_real_legacy_article(
+    conn: sqlite3.Connection, canonical_url: str | None = None
+) -> bool:
+    """Đã có bài REAL/PUBLISHED kế thừa (cùng source + canonical URL) chưa."""
+    target_url = (
+        canonical_url
+        if canonical_url is not None
+        else _normalize_legacy_item().canonical_url
+    )
     try:
         row = conn.execute(
-            "SELECT 1 FROM articles WHERE data_origin = 'REAL' AND url = ? LIMIT 1",
-            (_REAL_LEGACY_URL,),
+            """
+            SELECT 1 FROM articles
+            WHERE data_origin = 'REAL'
+              AND article_status = 'PUBLISHED'
+              AND source = ?
+              AND url = ?
+            LIMIT 1
+            """,
+            (_REAL_LEGACY_SOURCE_ID, target_url),
         ).fetchone()
         return row is not None
     except sqlite3.OperationalError:
@@ -284,14 +311,36 @@ def seed_legacy_public_article(conn: sqlite3.Connection) -> int:
     """Nạp fixture REAL/PUBLISHED kế thừa nội dung công khai Vũ Học AI v0.3.1.
 
     Trả về số bản ghi đã chèn (0 nếu đã tồn tại). Không bịa dữ liệu: tiêu đề,
-    tóm tắt và thân bài là nguyên văn nguồn v0.3.1; provenance chỉ nằm trong
-    raw_items nên không lộ ra GET /api/articles. Không chạm dữ liệu SAMPLE.
+    tóm tắt và thân bài là nguyên văn nguồn v0.3.1; canonical_url, normalized_title
+    và content_hash đi qua normalize_item() để khớp hợp đồng importer/dedup;
+    provenance chỉ nằm trong raw_items nên không lộ ra GET /api/articles.
+    Không chạm dữ liệu SAMPLE hay bản nháp DRAFT hiện hữu.
     """
-    if _has_real_legacy_article(conn):
+    normalized = _normalize_legacy_item()
+    conn.execute(
+        """
+        UPDATE raw_items
+        SET canonical_url = :url,
+            normalized_title = :title,
+            content_hash = :hash
+        WHERE source_id = :sid
+          AND data_origin = 'REAL'
+          AND (
+              canonical_url IS NOT :url
+              OR normalized_title IS NOT :title
+              OR content_hash IS NOT :hash
+          )
+        """,
+        {
+            "sid": normalized.source_id,
+            "url": normalized.canonical_url,
+            "title": normalized.normalized_title,
+            "hash": normalized.content_hash,
+        },
+    )
+    if _has_real_legacy_article(conn, normalized.canonical_url):
         return 0
-    content_hash = hashlib.sha256(
-        f"{_REAL_LEGACY_TITLE}\n{_REAL_LEGACY_BODY}".encode("utf-8")
-    ).hexdigest()
+
     inserted = 0
     cur = conn.execute(
         """
@@ -302,17 +351,28 @@ def seed_legacy_public_article(conn: sqlite3.Connection) -> int:
         ON CONFLICT(source_id) DO NOTHING
         """,
         {
-            "sid": _REAL_LEGACY_SOURCE_ID,
+            "sid": normalized.source_id,
             "name": "Vũ Học AI v0.3.1 (bài đã xuất bản công khai, kế thừa)",
-            "url": _REAL_LEGACY_URL,
-            "published": _REAL_LEGACY_PUBLISHED_AT,
+            "url": normalized.canonical_url,
+            "published": normalized.fetched_at,
         },
     )
     inserted += max(cur.rowcount, 0)
 
     has_raw = conn.execute(
-        "SELECT 1 FROM raw_items WHERE canonical_url = ? AND data_origin = 'REAL' LIMIT 1",
-        (_REAL_LEGACY_URL,),
+        """
+        SELECT 1 FROM raw_items
+        WHERE canonical_url = ?
+          AND normalized_title = ?
+          AND content_hash = ?
+          AND data_origin = 'REAL'
+        LIMIT 1
+        """,
+        (
+            normalized.canonical_url,
+            normalized.normalized_title,
+            normalized.content_hash,
+        ),
     ).fetchone()
     if has_raw is None:
         cur = conn.execute(
@@ -324,12 +384,12 @@ def seed_legacy_public_article(conn: sqlite3.Connection) -> int:
                     :published, :provenance, 'REAL', :published)
             """,
             {
-                "sid": _REAL_LEGACY_SOURCE_ID,
-                "url": _REAL_LEGACY_URL,
-                "title": _REAL_LEGACY_TITLE,
-                "hash": content_hash,
-                "body": _REAL_LEGACY_BODY,
-                "published": _REAL_LEGACY_PUBLISHED_AT,
+                "sid": normalized.source_id,
+                "url": normalized.canonical_url,
+                "title": normalized.normalized_title,
+                "hash": normalized.content_hash,
+                "body": normalized.content,
+                "published": normalized.fetched_at,
                 "provenance": _REAL_LEGACY_PROVENANCE,
             },
         )
@@ -343,11 +403,11 @@ def seed_legacy_public_article(conn: sqlite3.Connection) -> int:
                 :published, 'REAL', 'PUBLISHED')
         """,
         {
-            "title": _REAL_LEGACY_TITLE,
-            "url": _REAL_LEGACY_URL,
-            "sid": _REAL_LEGACY_SOURCE_ID,
+            "title": normalized.normalized_title,
+            "url": normalized.canonical_url,
+            "sid": normalized.source_id,
             "summary": _REAL_LEGACY_SUMMARY,
-            "published": _REAL_LEGACY_PUBLISHED_AT,
+            "published": normalized.fetched_at,
         },
     )
     inserted += max(cur.rowcount, 0)
@@ -359,8 +419,15 @@ def run_seed() -> dict[str, int]:
 
     Mỗi bảng chỉ được seed khi chưa có bản ghi data_origin = 'SAMPLE'
     nào trong bảng đó (kèm ON CONFLICT DO NOTHING với id ổn định làm
-    lớp bảo vệ thứ hai). Không chạm dữ liệu data_origin = 'REAL'.
+    lớp bảo vệ thứ hai). Không xóa/ghi đè dữ liệu data_origin = 'REAL'.
     """
+    database.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    init_conn = get_connection()
+    try:
+        init_conn.executescript(database.SCHEMA)
+        init_conn.commit()
+    finally:
+        init_conn.close()
     apply_migration()  # an toàn nếu schema chưa tồn tại; không reset DB
     conn = get_connection()
     try:
