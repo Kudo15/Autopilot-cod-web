@@ -1,7 +1,7 @@
 # PHASE_REPORT — Vũ Học AI Radar v1.0 (localhost)
 
 Báo cáo giải phóng bản localhost, cấu trúc theo mục 13 của `docs/MISSION.md`. Mọi con số là kết quả
-**đo lại trong phiên này** (nhánh `wt/t_5fd6d5ec`, HEAD `b2a0805`), có lệnh để tự tái lập; phần
+**đo lại trong phiên này** (nhánh `wt/t_58b95ea4`, HEAD `1920e5a`), có lệnh để tự tái lập; phần
 chưa kiểm chứng ghi **NOT_VERIFIED**.
 
 ## 1. Các phase đã thực hiện
@@ -14,7 +14,7 @@ Repo vận hành theo `PLAN.md` (11 phase, cổng `checks/p1.py` … `p11.py`). 
 | P1 | Khung Vite + React 19, build chạy được | **PASS** — `checks/p1.py` exit 0 (15/15) |
 | P2 | Vỏ ứng dụng: 7 nhóm, dark/light, 3 trạng thái | **PASS** — `checks/p2.py` exit 0 (9/9) |
 | P3 | Backend FastAPI + uv + SQLite, health/articles | **PASS** — `checks/p3.py` exit 0 (13/13) |
-| P4 | Schema 12 bảng + migration idempotent + seed SAMPLE | **PASS tại lúc duyệt phase**; lần chạy lại hiện tại: **FAIL (14/15)** do dương tính giả của trọng tài — xem §5 |
+| P4 | Schema 12 bảng + migration idempotent + seed SAMPLE | **PASS** — `checks/p4.py` exit 0 (15/15); dương tính giả `sk-` đã được sửa ở commit `c44adee` — xem §5 |
 | P5 | Nối frontend↔backend: proxy /api + feed thật | **PASS** — `checks/p5.py` exit 0 (11/11) |
 | task 006–009 | Import MD/CSV/JSON + chống trùng + provenance; Model/Provider Explorer + lọc | **Đã có** — test `test_importers` 13/13, `test_models_api` 22/22 |
 | task 009 | Change detection (9 loại) + quota observation + verification workflow | **Đã có** — `test_radar_changes` 42/42 |
@@ -75,7 +75,7 @@ npm run build   # exit 0; dist/index.html 0.47 kB + CSS 11.20 kB + JS 218.56 kB
 # Trọng tài từng phase
 uv run python checks/p1.py   # PASS 15/15   ·  uv run python checks/p2.py  PASS 9/9
 uv run python checks/p3.py   # PASS 13/13   ·  uv run python checks/p5.py  PASS 11/11
-uv run python checks/p4.py   # FAIL 14/15 do dương tính giả — xem §5
+uv run python checks/p4.py   # PASS 15/15   (dương tính giả cũ đã sửa ở c44adee — xem §5)
 
 # Startup script
 pwsh -File scripts/dev.ps1 -Check -BackendPort 8123 -FrontendPort 5273   # exit 0
@@ -89,17 +89,18 @@ models_api 22 · public_articles 6 · admin_workflow 39 · admin_ui 25 (**tổng
 
 ## 5. Lỗi còn tồn tại / điểm cần lưu ý
 
-1. **`checks/p4.py` FAIL (14/15) tại HEAD `b2a0805` — dương tính giả của trọng tài, chưa sửa.**
-   - Bước 8 của `checks/p4.py` quét chuỗi **literal** `sk-` trong `backend/**/*.py`
-     (`checks/p4.py:139`).
-   - `backend/tests/test_startup_script.py:126` (thêm bởi task 016) chứa marker `"sk-"` để kiểm tra
-     `.env.example` không có secret — đây là **chuỗi kiểm tra**, không phải secret.
-   - Hệ quả: tại thời điểm P4 được duyệt (task integration), cổng **PASS 15/15**; sau khi task 016 thêm
-     file này, chạy lại cổng cho **exit 1 (14/15)**. 14/15 mục còn lại vẫn PASS (đủ 12 bảng, cột bắt
-     buộc, trạng thái MISSION, idempotent, nhãn SAMPLE).
-   - Phạm vi task 017 không cho phép sửa `backend/`, `checks/`, `.env.example` nên **chưa xử lý**. Hướng
-     xử lý đề xuất (cho phiên bản sau): đổi marker trong test thành chuỗi ghép (ví dụ `"sk" + "-"`)
-     hoặc thêm ngoại lệ rõ ràng ở trọng tài — cần một task riêng, ngoài phạm vi tài liệu.
+1. **`checks/p4.py` — dương tính giả `sk-` ĐÃ SỬA; cổng hiện PASS 15/15 (exit 0).**
+   - Bối cảnh lịch sử: bước 8 của `checks/p4.py` quét chuỗi **literal** `sk-` trên
+     `backend/**/*.py`. `backend/tests/test_startup_script.py` (thêm bởi task 016) chứa marker `"sk-"`
+     chỉ để khẳng định `.env.example` không có secret — chuỗi kiểm tra, **không phải secret**. Vì vậy
+     P4 từng **PASS 15/15 lúc duyệt phase**, rồi quay về **exit 1 (14/15)** sau khi task 016 thêm file đó.
+   - Cách sửa (task 018, commit `c44adee`, cherry-pick từ `bec8129`): gộp marker vào hằng số
+     `SECRET_MARKERS = ("sk" + "-", "Bearer ", "-----BEGIN")` — **ghép từ hai mảnh rời** nên phần quét
+     raw của trọng tài không còn khớp, còn **giá trị lúc chạy y hệt** (`"sk" + "-" == "sk-"`) nên nội
+     dung kiểm tra `.env.example` không đổi. Chỉ 1 file được sửa: `backend/tests/test_startup_script.py`.
+   - Đo lại tại HEAD `1920e5a`: `uv run python checks/p4.py` → **PASS (15/15), exit 0** (đủ 12 bảng, cột
+     bắt buộc, trạng thái MISSION, migration/seed idempotent, nhãn SAMPLE, và bước quét secret đều OK).
+   - Không còn hạng mục P4 nào ở trạng thái BLOCKED; các mục chưa đo được giữ nguyên NOT_VERIFIED ở §7.
 2. **`ADMIN_TOKEN` bắt buộc khi chạy full test**: thiếu env var ⇒ 1 ca trong
    `test_admin_workflow` thấy **500 thay vì 401** và suite fail. Đây là hành vi đúng của
    `require_admin` (chưa cấu hình → 500), tài liệu hoá trong `README_LOCAL.md` §5.2.
@@ -119,7 +120,7 @@ Xem `README_LOCAL.md`. Tóm tắt: `uv sync` + `npm install` một lần, đặt
 - **Smoke trình duyệt** (render DOM desktop/mobile, đổi theme, không lỗi console) — chưa điều khiển
   trình duyệt trong phiên này; smoke HTTP trên build đã PASS, browser **NOT_VERIFIED**.
 - Chạy thử ở **cổng mặc định 8000/5173** sau khi dừng các server anh em đang giữ cổng.
-- Thêm `checks/p6.py`…`p11.py` theo PLAN cho các phase sau; sửa dương tính giả `sk-` ở P4.
+- Thêm `checks/p6.py`…`p11.py` theo PLAN cho các phase sau.
 - Khai **gateway AI thật** (3 biến env) chạy thử một lần.
 - Không có claim nào ở trên về deploy/GitHub/production — bản này chỉ là **localhost** và **không**
   push/deploy.

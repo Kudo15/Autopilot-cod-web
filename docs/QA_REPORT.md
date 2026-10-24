@@ -1,7 +1,7 @@
 # QA_REPORT — Kiểm thử và xác minh Vũ Học AI Radar v1.0 (localhost)
 
-Báo cáo chất lượng của bản **localhost** tại nhánh `wt/t_5fd6d5ec`, HEAD `b2a0805`
-(2026-10-25 05:15 +0700). Toàn bộ lệnh bên dưới được **chạy lại từ đầu trong phiên này**; kèm lệnh
+Báo cáo chất lượng của bản **localhost** tại nhánh `wt/t_58b95ea4`, HEAD `1920e5a`
+(2026-10-25 05:46 +0700). Toàn bộ lệnh bên dưới được **chạy lại từ đầu trong phiên này**; kèm lệnh
 để tự tái lập. Mọi hạng mục không thể kiểm chứng được ghi rõ **NOT_VERIFIED** hoặc **BLOCKED** — không
 bao giờ ghi PASS cho thứ chưa đo.
 
@@ -15,7 +15,7 @@ bao giờ ghi PASS cho thứ chưa đo.
 | uv | `0.12.17` |
 | Python | 3.13 (qua `uv run --no-sync`) |
 | PowerShell | `pwsh` 7.x |
-| Git HEAD | `b2a0805` — nhánh `wt/t_5fd6d5ec` |
+| Git HEAD | `1920e5a` — nhánh `wt/t_58b95ea4` |
 | Admin token | biến môi trường test sinh ngẫu nhiên (không hardcode) |
 
 ## 2. Khung đánh giá
@@ -40,7 +40,7 @@ bao giờ ghi PASS cho thứ chưa đo.
 | 5 | `checks/p1.py` | **PASS 15/15** |
 | 6 | `checks/p2.py` | **PASS 9/9** |
 | 7 | `checks/p3.py` | **PASS 13/13** |
-| 8 | `checks/p4.py` | **FAIL 14/15** — dương tính giả `sk-`, mục 4.2 |
+| 8 | `checks/p4.py` | **PASS 15/15** — dương tính giả `sk-` đã sửa, mục 4.2 |
 | 9 | `checks/p5.py` | **PASS 11/11** |
 | 10 | `pwsh -File scripts/dev.ps1 -Check -BackendPort 8123 -FrontendPort 5273` | exit 0 — sẵn sàng |
 | 11 | `pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273 -AutoStopSeconds 25` | exit 0 — migration OK, backend UP `127.0.0.1:8123`, frontend UP `127.0.0.1:5273`, dừng sạch |
@@ -49,7 +49,6 @@ bao giờ ghi PASS cho thứ chưa đo.
 
 | Hạng mục | Trạng thái | Lý do |
 |---|---|---|
-| `checks/p4.py` PASS tại HEAD | **BLOCKED (FAIL 14/15)** | dương tính giả của trọng tài — xem 4.2 |
 | Smoke cổng mặc định 8000/5173 | **NOT_VERIFIED** | cổng đang bị server anh em giữ (8000→PID 31912, 5173→PID 30600) |
 | Smoke trên trình duyệt (render DOM desktop/mobile, đổi theme) | **NOT_VERIFIED** | không điều khiển trình duyệt trong phiên này |
 | Độ tươi / HTTP thật của feed ngoài (live network) | **NOT_VERIFIED** | chỉ chạy adapter với feed cục bộ trong test |
@@ -63,7 +62,7 @@ bao giờ ghi PASS cho thứ chưa đo.
 uv run --no-sync python checks/p1.py   -> ket qua phase: PASS (15/15)   exit 0
 uv run --no-sync python checks/p2.py   -> ket qua phase: PASS (9/9)     exit 0
 uv run --no-sync python checks/p3.py   -> ket qua phase: PASS (13/13)   exit 0
-uv run --no-sync python checks/p4.py   -> ket qua phase: FAIL (14/15)   exit 1
+uv run --no-sync python checks/p4.py   -> ket qua phase: PASS (15/15)   exit 0
 uv run --no-sync python checks/p5.py   -> ket qua phase: PASS (11/11)   exit 0
 ```
 
@@ -75,23 +74,26 @@ uv run --no-sync python checks/p5.py   -> ket qua phase: PASS (11/11)   exit 0
   JSON 1 phần tử, `radar.db` tồn tại (13 bảng kể cả `sqlite_sequence`), `main.py` không secret.
   **PASS**.
 - **p4**: schema/seed — 12 bảng nghiệp vụ đủ cột bắt buộc MISSION, migration chạy lại exit 0,
-  seed nhãn SAMPLE (58 ô), seed lần 2 exit 0 và **không nhân bản** (24 bản ghi trước/sau). **1 fail** ở
-  bước quét `sk-` — xem 4.2. **FAIL (14/15)**.
+  seed nhãn SAMPLE (58 ô), seed lần 2 exit 0 và **không nhân bản** (24 bản ghi trước/sau). Bước quét
+  secret hiện OK — bước từng bị dương tính giả `sk-` đã được sửa ở `c44adee` (xem 4.2). **PASS (15/15) exit 0**.
 - **p5**: nối frontend–backend — proxy `/api` trả JSON giống gọi trực tiếp back-end (cùng dữ liệu từ
   DB), build exit 0, bundle không chứa chuỗi giống API key. **PASS**.
 
-### 4.2 `checks/p4.py` FAIL 14/15 — dương tính giả (BLOCKED, không sửa trong phạm vi này)
+### 4.2 `checks/p4.py` — dương tính giả `sk-` ĐÃ SỬA; hiện PASS 15/15 (exit 0)
 
-- `checks/p4.py:139` quét **chuỗi literal** `"sk-"` cùng `"BEGIN PRIVATE KEY"` trong
-  `backend/**/*.py`.
-- `backend/tests/test_startup_script.py:126` chứa marker `"sk-"` **chỉ để kiểm tra** `.env.example`
-  không có secret — đây là chuỗi kiểm tra, **không phải secret**. File này mới được thêm bởi task 016
-  sau khi P4 từng được duyệt **PASS 15/15**.
-- Hệ quả: tại HEAD hiện tại cổng quay về **exit 1 (14/15)**. Các 14 mục còn lại đều PASS.
-- Phạm vi task 017 chỉ được tạo 6 tài liệu, không sửa `backend/`/`checks/`/`.env.example` nên mục
-  này được ghi là **BLOCKED (chưa sửa)** chứ không xác nhận P4 PASS.
-- Hướng xử lý cho phiên sau: đổi marker trong test thành chuỗi ghép (`"sk" + "-"`), hoặc thêm ngoại
-  lệ rõ ràng trong trọng tài — cần một task riêng (ngoài phạm vi tài liệu).
+- Bối cảnh lịch sử: bước quét secret của `checks/p4.py` quét chuỗi **literal** `"sk-"` cùng
+  `"BEGIN PRIVATE KEY"` trong `backend/**/*.py`.
+- `backend/tests/test_startup_script.py` (thêm bởi task 016) chứa marker `"sk-"` **chỉ để kiểm tra**
+  `.env.example` không có secret — chuỗi kiểm tra, **không phải secret**. Hệ quả: P4 từng được duyệt
+  **PASS 15/15**, rồi quay về **exit 1 (14/15)** sau khi task 016 thêm file đó.
+- Cách sửa (task 018, commit `c44adee`, cherry-pick từ `bec8129`): marker được gộp vào hằng số
+  `SECRET_MARKERS = ("sk" + "-", "Bearer ", "-----BEGIN")` — **ghép từ hai mảnh rời** nên quét raw
+  không còn trùng, còn **giá trị lúc chạy y hệt** (`"sk" + "-" == "sk-"`). Chỉ 1 file được sửa:
+  `backend/tests/test_startup_script.py`; `checks/` và `.env.example` không đổi.
+- Đo lại tại HEAD `1920e5a`: `uv run --no-sync python checks/p4.py` → **PASS (15/15), exit 0** —
+  đủ 12 bảng, cột bắt buộc, trạng thái MISSION, migration/seed idempotent, nhãn SAMPLE, quét secret OK.
+- Không còn hạng mục P4 nào ở trạng thái BLOCKED; các mục live (cổng mặc định, browser, live feed,
+  live gateway) vẫn **NOT_VERIFIED** — xem mục 6.
 
 ### 4.3 Bộ test back-end (đầy đủ + các bộ đặc thù)
 
@@ -158,8 +160,8 @@ thiết kế `.env.example` rỗng; script không hề tự điền secret.
   mở cổng ra ngoài, không tạo remote, không deploy.
 - **Dữ liệu ngoài = untrusted**: title/url/feed bytes/upload chỉ là dữ liệu; mọi SQL dùng bind
   parameter; registry nằm ngoài bundle front-end; không vượt CAPTCHA/login/paywall/rate limit.
-- **Ở back-end đã đo**: `checks/p1.py`/`p3.py`/`p5.py` xác nhận bundle và `main.py` không chứa chuỗi
-  giống key; mục `sk-` của p4 là dương tính giả đã giải thích ở 4.2.
+- **Ở back-end đã đo**: `checks/p1.py`/`p3.py`/`p4.py`/`p5.py` xác nhận bundle và mã nguồn không chứa
+  chuỗi giống key — mục quét `sk-` của p4 từng là dương tính giả đã được sửa (xem 4.2).
 
 ## 6. Hạng mục chưa kiểm chứng (NOT_VERIFIED) — ranh giới của bản này
 
@@ -175,14 +177,14 @@ thiết kế `.env.example` rỗng; script không hề tự điền secret.
 ## 7. Kết luận cho bản localhost
 
 - Toàn bộ chức năng **local** đã đo đều hoạt động: test 325/325 OK, build exit 0, startup thật exit 0
-  ở cổng tùy chọn, migration/seed idempotent, dữ liệu REAL/SAMPLE phân định rõ.
-- **Một vấn đề đã biết**: `checks/p4.py` FAIL 14/15 do dương tính giả `sk-` (không phải secret); xử lý
-  ở phiên sau, ngoài phạm vi tài liệu.
+  ở cổng tùy chọn, migration/seed idempotent, dữ liệu REAL/SAMPLE phân định rõ. Toàn bộ 5 cổng
+  `checks/p1.py…p5.py` đều **PASS** (p4 nay **15/15** sau khi sửa dương tính giả `sk-` ở `c44adee`).
 - **Chưa kiểm chứng**: cổng mặc định, trình duyệt, live feed, live gateway — ghi NOT_VERIFIED.
 
 ## 8. Danh sách tài liệu của bản release localhost
 
-Cả 6 file đều được tạo trong task 017 (nhánh `wt/t_5fd6d5ec`):
+Cả 6 file đều được tạo trong task 017 (nhánh `wt/t_5fd6d5ec`); hai báo cáo này đã được refresh ở
+task 019 (HEAD `1920e5a`):
 
 - `README_LOCAL.md` — hướng dẫn chạy + kết quả đo + xử lý sự cố
 - `docs/ARCHITECTURE.md` — kiến trúc hai nửa, ranh giới dữ liệu
