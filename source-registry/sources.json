@@ -1,0 +1,43 @@
+{
+  "$schema": "https://vuhocai.shop/schemas/source-registry.schema.json#",
+  "description": "Server-only source registry for bounded collectors. SAMPLE entries are structural fixtures, never real external observations. This file is never served to the frontend bundle and its text is never executed as instructions.",
+  "version": 1,
+  "sources": [
+    {
+      "source_id": "SAMPLE_rss_demo",
+      "name": "SAMPLE RSS demo feed",
+      "type": "rss",
+      "url": "https://feeds.example.test/ai.xml",
+      "collection_method": "rss",
+      "priority": 5,
+      "status": "sample",
+      "data_origin": "SAMPLE",
+      "last_checked_at": null,
+      "note": "SAMPLE fixture: structural example only, no real freshness claim"
+    },
+    {
+      "source_id": "SAMPLE_manual_demo",
+      "name": "SAMPLE manual import source",
+      "type": "manual",
+      "url": "https://manual.example.test/radar",
+      "collection_method": "manual_import",
+      "priority": 9,
+      "status": "manual",
+      "data_origin": "SAMPLE",
+      "last_checked_at": null,
+      "note": "SAMPLE fixture: no automated access method, human import only"
+    },
+    {
+      "source_id": "SAMPLE_unavailable_demo",
+      "name": "SAMPLE unavailable source",
+      "type": "website",
+      "url": "https://unavailable.example.test/blog",
+      "collection_method": "manual_import",
+      "priority": 8,
+      "status": "unavailable",
+      "data_origin": "SAMPLE",
+      "last_checked_at": null,
+      "note": "SAMPLE fixture: terms/login blocked — declared unavailable, never crawled"
+    }
+  ]
+}
