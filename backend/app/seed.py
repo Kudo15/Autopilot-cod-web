@@ -16,9 +16,25 @@ Nguyên tắc (theo MISSION mục 5 + constraint phase 4):
   bản ghi data_origin = 'SAMPLE' nào, và mọi INSERT dùng
   ON CONFLICT DO NOTHING với id ổn định.
 - Seed KHÔNG xóa/ghi đè dữ liệu thật, KHÔNG reset database.
+
+Ngoài khối SAMPLE, seed còn nạp ĐÚNG MỘT bản ghi data_origin = 'REAL' đã
+được chủ dự án xuất bản công khai trước đó (kế thừa Vũ Học AI v0.3.1), để
+hợp đồng feed công khai (checks/p5.py) có nguồn thật thay vì mảng rỗng:
+- Bài "Đọc quota trong 60 giây: request khác token" lấy nguyên văn từ repo
+  public v0.3.1 của chính chủ dự án (AI-News-Web/ai-news, src/articles.js)
+  và vẫn đang được phục vụ công khai tại URL dưới đây (đã đo HTTP 200).
+- Khối này KHÔNG bịa thông số provider/quota/khuyến mãi/model nào; nó chỉ
+  tái sử dụng nội dung biên tập do chủ dự án công bố. Registry v0.3.1 đánh
+  dấu dữ liệu này là "unverified" nên nó KHÔNG được dùng làm dữ liệu xác
+  minh cho provider/model.
+- Provenance của bản ghi nằm trong raw_items (không lộ ra API công khai):
+  canonical_url + provenance + content_hash (sha256 nội dung nguyên văn).
+- Idempotent: chỉ chèn khi chưa có bài REAL nào cùng canonical_url; chạy lại
+  không nhân bản và không chạm dữ liệu SAMPLE/thật khác.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import sys
 
@@ -34,6 +50,35 @@ _T = "2026-01-01T00:00:00+07:00"
 #: Ghi chú chuẩn gắn cho mọi bản ghi mẫu để người đọc không nhầm.
 _NOTE = ("Dữ liệu mẫu SAMPLE — ví dụ cấu trúc, không phải thông tin nhà "
          "cung cấp thật. Trường chưa xác minh để NULL, không suy đoán.")
+
+# --- Fixture REAL kế thừa dữ liệu công khai Vũ Học AI v0.3.1 -------------
+# Nguồn nguyên văn (repo public của chính chủ dự án, trên máy này):
+#   D:\anhvuxd_2026\VUHOCAI\Project\AI-News-Web\ai-news\src\articles.js
+#   entry id 'quota-guide'  (registry: source-registry/source-registry.json,
+#   key SNAP-2026-10-10, accessedAt 2026-10-10, status 'unverified')
+# URL công khai đang phục vụ nội dung này (đo được HTTP 200 ngày 2026-10-24):
+_REAL_LEGACY_URL = "https://1c469d4b.ai-news-200.pages.dev/"
+_REAL_LEGACY_SOURCE_ID = "LEGACY_v031"
+
+_REAL_LEGACY_TITLE = "Đọc quota trong 60 giây: request khác token"
+_REAL_LEGACY_SUMMARY = ("Chưa dùng hết quota ngày nhưng vẫn bị giới hạn? "
+                        "Hãy kiểm tra hạn mức phút.")
+_REAL_LEGACY_BODY = (
+    "RPM/RPD đếm request theo phút/ngày. TPM/TPD đếm token. Các ngưỡng có thể "
+    "áp dụng đồng thời: còn request nhưng hết token vẫn bị giới hạn.\n\n"
+    "Credit, Magicube và Neuron là đơn vị riêng. Không tự quy đổi thành số "
+    "request nếu chưa biết cách tính của provider.\n\n"
+    "Khi gặp rate limit, giảm số request đồng thời và kiểm tra ngưỡng đang "
+    "chạm. Theo dõi usage thực tế thay vì chỉ nhìn con số quota lớn nhất."
+)
+_REAL_LEGACY_PUBLISHED_AT = "2026-10-10T00:00:00+07:00"
+_REAL_LEGACY_PROVENANCE = (
+    "Kế thừa nội dung công khai Vũ Học AI v0.3.1: repo AI-News-Web/ai-news "
+    "(commit 4fda51e), file src/articles.js entry 'quota-guide'; bản ghi "
+    "nguồn SNAP-2026-10-10 (source-registry.json) truy cập 2026-10-10, "
+    "trạng thái 'unverified'. Nội dung nguyên văn, không chỉnh sửa, không "
+    "suy diễn thêm; URL công khai đang phục vụ: " + _REAL_LEGACY_URL
+)
 
 
 def _has_sample(conn: sqlite3.Connection, table: str) -> bool:
@@ -223,6 +268,92 @@ def _count_sample(conn: sqlite3.Connection, table: str) -> int:
         return 0
 
 
+def _has_real_legacy_article(conn: sqlite3.Connection) -> bool:
+    """Đã có bài REAL kế thừa (cùng URL công khai) chưa — lớp idempotent."""
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM articles WHERE data_origin = 'REAL' AND url = ? LIMIT 1",
+            (_REAL_LEGACY_URL,),
+        ).fetchone()
+        return row is not None
+    except sqlite3.OperationalError:
+        return False
+
+
+def seed_legacy_public_article(conn: sqlite3.Connection) -> int:
+    """Nạp fixture REAL/PUBLISHED kế thừa nội dung công khai Vũ Học AI v0.3.1.
+
+    Trả về số bản ghi đã chèn (0 nếu đã tồn tại). Không bịa dữ liệu: tiêu đề,
+    tóm tắt và thân bài là nguyên văn nguồn v0.3.1; provenance chỉ nằm trong
+    raw_items nên không lộ ra GET /api/articles. Không chạm dữ liệu SAMPLE.
+    """
+    if _has_real_legacy_article(conn):
+        return 0
+    content_hash = hashlib.sha256(
+        f"{_REAL_LEGACY_TITLE}\n{_REAL_LEGACY_BODY}".encode("utf-8")
+    ).hexdigest()
+    inserted = 0
+    cur = conn.execute(
+        """
+        INSERT INTO sources (source_id, name, type, url, collection_method,
+            priority, status, last_checked_at, data_origin, created_at)
+        VALUES (:sid, :name, 'manual', :url, 'manual_legacy_inherit', 9,
+                'active', :published, 'REAL', :published)
+        ON CONFLICT(source_id) DO NOTHING
+        """,
+        {
+            "sid": _REAL_LEGACY_SOURCE_ID,
+            "name": "Vũ Học AI v0.3.1 (bài đã xuất bản công khai, kế thừa)",
+            "url": _REAL_LEGACY_URL,
+            "published": _REAL_LEGACY_PUBLISHED_AT,
+        },
+    )
+    inserted += max(cur.rowcount, 0)
+
+    has_raw = conn.execute(
+        "SELECT 1 FROM raw_items WHERE canonical_url = ? AND data_origin = 'REAL' LIMIT 1",
+        (_REAL_LEGACY_URL,),
+    ).fetchone()
+    if has_raw is None:
+        cur = conn.execute(
+            """
+            INSERT INTO raw_items (source_id, canonical_url, normalized_title,
+                content_hash, raw_content, content_type, fetched_at, provenance,
+                data_origin, created_at)
+            VALUES (:sid, :url, :title, :hash, :body, 'text/markdown',
+                    :published, :provenance, 'REAL', :published)
+            """,
+            {
+                "sid": _REAL_LEGACY_SOURCE_ID,
+                "url": _REAL_LEGACY_URL,
+                "title": _REAL_LEGACY_TITLE,
+                "hash": content_hash,
+                "body": _REAL_LEGACY_BODY,
+                "published": _REAL_LEGACY_PUBLISHED_AT,
+                "provenance": _REAL_LEGACY_PROVENANCE,
+            },
+        )
+        inserted += max(cur.rowcount, 0)
+
+    cur = conn.execute(
+        """
+        INSERT INTO articles (title, url, source, category, summary,
+            published_at, created_at, data_origin, article_status)
+        VALUES (:title, :url, :sid, 'tip-trick', :summary, :published,
+                :published, 'REAL', 'PUBLISHED')
+        """,
+        {
+            "title": _REAL_LEGACY_TITLE,
+            "url": _REAL_LEGACY_URL,
+            "sid": _REAL_LEGACY_SOURCE_ID,
+            "summary": _REAL_LEGACY_SUMMARY,
+            "published": _REAL_LEGACY_PUBLISHED_AT,
+        },
+    )
+    inserted += max(cur.rowcount, 0)
+    return inserted
+
+
 def run_seed() -> dict[str, int]:
     """Chạy seed SAMPLE idempotent. Trả về số bản ghi SAMPLE theo bảng.
 
@@ -239,9 +370,11 @@ def run_seed() -> dict[str, int]:
                 continue
             cur = conn.execute(sql, params)
             inserted += max(cur.rowcount, 0)
+        real_added = seed_legacy_public_article(conn)
         conn.commit()
         counts = {t: _count_sample(conn, t) for t, _, _ in _inserts()}
         counts["_inserted_this_run"] = inserted
+        counts["_real_legacy_this_run"] = real_added
         return counts
     except Exception:
         conn.rollback()
@@ -257,9 +390,11 @@ def main() -> int:
         print(f"[SEED] THẤT BẠI: {type(exc).__name__}: {exc}")
         return 1
     inserted = counts.pop("_inserted_this_run")
+    real_added = counts.pop("_real_legacy_this_run")
     total = sum(counts.values())
     print(f"[SEED] OK: bản ghi SAMPLE mới lần chạy này: {inserted}; "
           f"tổng bản ghi SAMPLE trong DB: {total}")
+    print(f"[SEED] REAL kế thừa (bài công khai v0.3.1) chèn mới lần này: {real_added}")
     for table in sorted(counts):
         print(f"[SEED]   {table}: {counts[table]}")
     return 0
