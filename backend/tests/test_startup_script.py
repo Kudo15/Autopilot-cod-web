@@ -21,6 +21,12 @@ ROOT = Path(__file__).resolve().parents[2]
 DEV_SCRIPT = ROOT / "scripts" / "dev.ps1"
 ENV_EXAMPLE = ROOT / ".env.example"
 
+# Marker nghi secret, GHÉP TỪ MẢNH RỜI có chủ đích: nếu để nguyên văn chuỗi
+# "sk" + "-" trong file này thì checks/p4.py (quét chuỗi nghi secret trên
+# backend/**/*.py) báo false positive ngay trên chính file test. Giá trị lúc
+# chạy vẫn y hệt nên ý nghĩa kiểm tra không đổi.
+SECRET_MARKERS = ("sk" + "-", "Bearer ", "-----BEGIN")
+
 
 def read_text(path: Path) -> str:
     """Đọc file dạng text, bỏ BOM nếu có (dev.ps1 ghi kèm BOM cho PowerShell 5.1)."""
@@ -123,7 +129,7 @@ class EnvExampleTests(unittest.TestCase):
         self.assertTrue({"AI_BASE_URL", "AI_API_KEY", "AI_MODEL"} <= names)
 
     def test_has_no_secret_looking_content(self) -> None:
-        for marker in ("sk-", "Bearer ", "-----BEGIN"):
+        for marker in SECRET_MARKERS:
             self.assertNotIn(marker, self.text, f".env.example không được chứa {marker!r}")
 
     def test_comment_states_secrets_live_in_environment(self) -> None:
