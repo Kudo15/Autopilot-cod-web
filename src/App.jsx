@@ -3,11 +3,15 @@ import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { GroupView } from './components/GroupView.jsx';
 import { ExplorerView } from './components/ExplorerView.jsx';
+import { AdminView } from './components/admin/AdminView.jsx';
 import { CONTENT_GROUPS, DEFAULT_GROUP_ID } from './data/groups.js';
 import { useTheme } from './hooks/useTheme.js';
 
 //: Nhóm dùng API Explorer (GET /api/models) thay cho feed bài viết.
 const EXPLORER_GROUP_ID = 'free-model-explorer';
+
+//: Nhóm Admin Radar dùng API admin (P8b) — token nhập runtime, không nằm trong bundle.
+const ADMIN_GROUP_ID = 'admin-radar';
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
@@ -22,11 +26,13 @@ export default function App() {
     [activeId]
   );
 
-  // Nhóm Explorer tự gọi /api/models; các nhóm còn lại giữ nguyên feed bài viết.
+  // Nhóm Explorer tự gọi /api/models; Admin Radar tự gọi /api/admin/*;
+  // các nhóm còn lại giữ nguyên feed bài viết.
   const isExplorer = activeGroup.id === EXPLORER_GROUP_ID;
+  const isAdmin = activeGroup.id === ADMIN_GROUP_ID;
 
   useEffect(() => {
-    if (isExplorer) return undefined;
+    if (isExplorer || isAdmin) return undefined;
 
     const controller = new AbortController();
 
@@ -52,7 +58,7 @@ export default function App() {
       });
 
     return () => controller.abort();
-  }, [activeId, reloadKey, isExplorer]);
+  }, [activeId, reloadKey, isExplorer, isAdmin]);
 
   function handleSelectGroup(id) {
     setActiveId(id);
@@ -74,9 +80,11 @@ export default function App() {
           open={sidebarOpen}
         />
         <main className="app-main">
-          {isExplorer ? (
-            <ExplorerView group={activeGroup} />
-          ) : (
+                  {isAdmin ? (
+                    <AdminView />
+                  ) : isExplorer ? (
+                    <ExplorerView group={activeGroup} />
+                  ) : (
             <GroupView
               group={activeGroup}
               status={status}
