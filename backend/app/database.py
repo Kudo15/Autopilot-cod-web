@@ -44,6 +44,7 @@ def init_db() -> Path:
 
 def get_connection() -> sqlite3.Connection:
     """Mở một kết nối mới; người dùng PHẢI đóng sau khi sử dụng."""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn

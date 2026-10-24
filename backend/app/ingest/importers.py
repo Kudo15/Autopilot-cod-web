@@ -85,10 +85,56 @@ def parse_upload(filename: str, text: str) -> tuple[list[dict], str]:
     return parser(text), extension
 
 
+def _has_source_observation(conn: sqlite3.Connection, item: NormalizedItem) -> bool:
+    row = conn.execute(
+        """SELECT 1 FROM raw_items
+           WHERE source_id = ?
+             AND canonical_url = ?
+             AND normalized_title = ?
+             AND content_hash = ?
+             AND (data_origin IS NULL OR data_origin != 'SAMPLE')
+           LIMIT 1""",
+        (item.source_id, item.canonical_url, item.normalized_title, item.content_hash),
+    ).fetchone()
+    return row is not None
+
+
+def _has_normalized_item(
+    conn: sqlite3.Connection, item: NormalizedItem, has_article_dedup_cols: bool
+) -> bool:
+    raw_row = conn.execute(
+        """SELECT 1 FROM raw_items
+           WHERE canonical_url = ?
+             AND normalized_title = ?
+             AND content_hash = ?
+             AND (data_origin IS NULL OR data_origin != 'SAMPLE')
+           LIMIT 1""",
+        (item.canonical_url, item.normalized_title, item.content_hash),
+    ).fetchone()
+    if raw_row is not None:
+        return True
+    if has_article_dedup_cols:
+        article_row = conn.execute(
+            """SELECT 1 FROM articles
+               WHERE url = ?
+                 AND normalized_title = ?
+                 AND content_hash = ?
+                 AND (data_origin IS NULL OR data_origin != 'SAMPLE')
+               LIMIT 1""",
+            (item.canonical_url, item.normalized_title, item.content_hash),
+        ).fetchone()
+        return article_row is not None
+    return False
+
+
 def persist_import(
     conn: sqlite3.Connection, items: list[dict], source_id: str, content_type: str
 ) -> dict[str, int]:
-    """Normalize and write all rows atomically; an invalid item writes nothing."""
+    """Normalize, deduplicate, and write all rows atomically; an invalid batch writes nothing."""
+    if not isinstance(items, list) or not items:
+        raise ImportValidationError("import batch must contain at least one item")
+    if not isinstance(content_type, str) or not content_type.strip():
+        raise ImportValidationError("content_type must be a non-empty string")
     fetched_at = datetime.now(UTC).isoformat()
     try:
         normalized: list[NormalizedItem] = [
@@ -96,15 +142,30 @@ def persist_import(
         ]
     except ValueError as error:
         raise ImportValidationError(str(error)) from error
+    normalized_source_id = normalized[0].source_id
+    inserted = 0
+    skipped = 0
+    own_transaction = not conn.in_transaction
     try:
-        conn.execute("BEGIN")
+        if own_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        else:
+            conn.execute("SAVEPOINT persist_import_batch")
+        article_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()
+        }
+        has_article_dedup_cols = {"normalized_title", "content_hash"}.issubset(article_columns)
         conn.execute(
             """INSERT OR IGNORE INTO sources
                (source_id, name, type, collection_method, priority, status, data_origin)
                VALUES (?, ?, 'manual', 'manual_import', 9, 'active', 'REAL')""",
-            (source_id, f"Manual import: {source_id}"),
+            (normalized_source_id, f"Manual import: {normalized_source_id}"),
         )
         for item in normalized:
+            if _has_source_observation(conn, item):
+                skipped += 1
+                continue
+            already_known = _has_normalized_item(conn, item, has_article_dedup_cols)
             conn.execute(
                 """INSERT INTO raw_items
                    (source_id, canonical_url, normalized_title, content_hash, raw_content,
@@ -113,14 +174,41 @@ def persist_import(
                 (item.source_id, item.canonical_url, item.normalized_title, item.content_hash,
                  item.content, content_type, item.fetched_at, json.dumps(item.provenance)),
             )
-            conn.execute(
-                """INSERT INTO articles
-                   (title, url, source, summary, data_origin, article_status)
-                   VALUES (?, ?, ?, ?, 'REAL', 'DRAFT')""",
-                (item.title, item.canonical_url, item.source_id, item.content),
-            )
-        conn.commit()
-    except sqlite3.Error:
-        conn.rollback()
+            if already_known:
+                skipped += 1
+                continue
+            if has_article_dedup_cols:
+                conn.execute(
+                    """INSERT INTO articles
+                       (title, url, source, summary, data_origin, article_status,
+                        normalized_title, content_hash)
+                       VALUES (?, ?, ?, ?, 'REAL', 'DRAFT', ?, ?)""",
+                    (
+                        item.normalized_title,
+                        item.canonical_url,
+                        item.source_id,
+                        item.content,
+                        item.normalized_title,
+                        item.content_hash,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO articles
+                       (title, url, source, summary, data_origin, article_status)
+                       VALUES (?, ?, ?, ?, 'REAL', 'DRAFT')""",
+                    (item.normalized_title, item.canonical_url, item.source_id, item.content),
+                )
+            inserted += 1
+        if own_transaction:
+            conn.commit()
+        else:
+            conn.execute("RELEASE SAVEPOINT persist_import_batch")
+    except Exception:
+        if own_transaction:
+            conn.rollback()
+        else:
+            conn.execute("ROLLBACK TO SAVEPOINT persist_import_batch")
+            conn.execute("RELEASE SAVEPOINT persist_import_batch")
         raise
-    return {"inserted": len(normalized), "skipped": 0, "errors": 0}
+    return {"inserted": inserted, "skipped": skipped, "errors": 0}

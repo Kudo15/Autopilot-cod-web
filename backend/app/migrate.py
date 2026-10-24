@@ -59,9 +59,9 @@ def _check(values: tuple[str, ...]) -> str:
     """Chuỗi IN(...) cho CHECK; NULL luôn đi qua CHECK trong SQLite."""
     return "IN ({})".format(", ".join(f"'{v}'" for v in values))
 
-#: Định nghĩa bảng mới — tất cả CREATE ... IF NOT EXISTS.
-#: articles đã có từ Phase 3 nên KHÔNG nằm ở đây; migrate sẽ thêm
-#: cột còn thiếu (data_origin, article_status) an toàn sau khi check PRAGMA.
+#: Định nghĩa 12 bảng nghiệp vụ — tất cả CREATE ... IF NOT EXISTS.
+#: Nếu bảng articles đã có từ Phase 3 thì giữ nguyên dữ liệu và nâng cấp
+#: các cột còn thiếu qua ARTICLES_UPGRADE_COLUMNS trước khi tạo index.
 TABLES_DDL: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS sources (
@@ -92,6 +92,22 @@ TABLES_DDL: tuple[str, ...] = (
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        url TEXT,
+        source TEXT,
+        category TEXT,
+        summary TEXT,
+        published_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE')),
+        article_status TEXT CHECK (article_status IS NULL OR article_status %s),
+        normalized_title TEXT,
+        content_hash TEXT
+    )
+    """ % _check(ARTICLE_STATUS),
     """
     CREATE TABLE IF NOT EXISTS providers (
         provider_id TEXT PRIMARY KEY,
@@ -241,8 +257,21 @@ INDEXES_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_raw_items_canonical_url ON raw_items(canonical_url)",
     "CREATE INDEX IF NOT EXISTS idx_raw_items_content_hash ON raw_items(content_hash)",
     "CREATE INDEX IF NOT EXISTS idx_raw_items_fetched_at ON raw_items(fetched_at)",
+    "CREATE INDEX IF NOT EXISTS idx_raw_items_dedup_identity ON raw_items(canonical_url, normalized_title, content_hash)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_raw_items_source_observation
+       ON raw_items(source_id, canonical_url, normalized_title, content_hash)
+       WHERE canonical_url IS NOT NULL
+         AND normalized_title IS NOT NULL
+         AND content_hash IS NOT NULL
+         AND (data_origin IS NULL OR data_origin != 'SAMPLE')""",
     "CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category)",
     "CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_articles_dedup_identity
+       ON articles(url, normalized_title, content_hash)
+       WHERE url IS NOT NULL
+         AND normalized_title IS NOT NULL
+         AND content_hash IS NOT NULL
+         AND (data_origin IS NULL OR data_origin != 'SAMPLE')""",
     "CREATE INDEX IF NOT EXISTS idx_provider_models_provider ON provider_models(provider_id)",
     "CREATE INDEX IF NOT EXISTS idx_provider_models_model ON provider_models(model_id)",
     "CREATE INDEX IF NOT EXISTS idx_provider_models_free_status ON provider_models(free_status)",
@@ -266,6 +295,8 @@ ARTICLES_UPGRADE_COLUMNS: tuple[tuple[str, str], ...] = (
      "data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE'))"),
     ("article_status",
      "article_status TEXT CHECK (article_status IS NULL OR article_status %s)" % _check(ARTICLE_STATUS)),
+    ("normalized_title", "normalized_title TEXT"),
+    ("content_hash", "content_hash TEXT"),
 )
 
 
@@ -297,14 +328,14 @@ def apply_migration() -> Path:
         try:
             for ddl in TABLES_DDL:
                 conn.execute(ddl)
-            for idx in INDEXES_DDL:
-                conn.execute(idx)
-            # Nâng cấp an toàn bảng articles của Phase 3 (nếu đã tồn tại).
+            # Nâng cấp an toàn bảng articles của Phase 3/4/5 trước khi tạo index.
             if _table_exists(conn, "articles"):
                 cols = _existing_columns(conn, "articles")
                 for col_name, col_def in ARTICLES_UPGRADE_COLUMNS:
                     if col_name not in cols:
                         conn.execute(f"ALTER TABLE articles ADD COLUMN {col_def}")
+            for idx in INDEXES_DDL:
+                conn.execute(idx)
             conn.execute("PRAGMA foreign_key_check")
             conn.commit()
         except Exception:
