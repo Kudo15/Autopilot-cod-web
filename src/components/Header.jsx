@@ -1,4 +1,13 @@
-export function Header({ theme, onToggleTheme, onToggleSidebar }) {
+import { useState } from 'react';
+
+export function Header({ theme, onToggleTheme, onToggleSidebar, onSearch }) {
+  const [query, setQuery] = useState('');
+
+  function submit(event) {
+    event.preventDefault();
+    if (query.trim()) onSearch(query.trim());
+  }
+
   return (
     <header className="app-header">
       <button
@@ -14,6 +23,11 @@ export function Header({ theme, onToggleTheme, onToggleSidebar }) {
         <h1 className="brand-title">AI Radar</h1>
         <span className="brand-version">v1.0</span>
       </div>
+      <form className="header-search" onSubmit={submit} role="search">
+        <label className="sr-only" htmlFor="header-search-input">Tìm kiếm bài viết</label>
+        <input id="header-search-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm bài viết" />
+        <button type="submit" className="btn btn-small">Tìm</button>
+      </form>
       <button
         type="button"
         className="theme-toggle"

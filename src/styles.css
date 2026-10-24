@@ -103,6 +103,10 @@ body {
   font-size: 0.78rem;
 }
 
+.header-search { display: flex; align-items: center; gap: 6px; }
+.header-search input { width: 170px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 .sidebar-toggle {
   display: none;
   background: none;
@@ -237,6 +241,12 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+
+.article-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / 60%); }
+.article-dialog { position: relative; width: min(620px, 100%); padding: 24px; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 60px rgb(0 0 0 / 35%); }
+.article-dialog h3 { margin-top: 0; }
+.dialog-close { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--text); font-size: 1.6rem; cursor: pointer; }
 
 .state-controls {
   display: flex;
@@ -574,6 +584,9 @@ body {
   .brand-version {
     display: none;
   }
+
+  .header-search { order: 3; width: 100%; }
+  .header-search input { flex: 1; width: auto; }
 
   .app-body {
     flex-direction: column;

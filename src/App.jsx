@@ -4,8 +4,11 @@ import { Sidebar } from './components/Sidebar.jsx';
 import { GroupView } from './components/GroupView.jsx';
 import { ExplorerView } from './components/ExplorerView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
+import { SearchView } from './components/SearchView.jsx';
+import { ArticleDialog } from './components/ArticleDialog.jsx';
 import { CONTENT_GROUPS, DEFAULT_GROUP_ID } from './data/groups.js';
 import { useTheme } from './hooks/useTheme.js';
+import { useBookmarks } from './hooks/useBookmarks.js';
 
 //: Nhóm dùng API Explorer (GET /api/models) thay cho feed bài viết.
 const EXPLORER_GROUP_ID = 'free-model-explorer';
@@ -20,6 +23,9 @@ export default function App() {
   const [status, setStatus] = useState('loading');
   const [articles, setArticles] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const { isBookmarked, toggleBookmark } = useBookmarks();
 
   const activeGroup = useMemo(
     () => CONTENT_GROUPS.find((g) => g.id === activeId) ?? CONTENT_GROUPS[0],
@@ -71,6 +77,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        onSearch={setSearchQuery}
       />
       <div className="app-body">
         <Sidebar
@@ -80,7 +87,9 @@ export default function App() {
           open={sidebarOpen}
         />
         <main className="app-main">
-                  {isAdmin ? (
+                  {searchQuery ? (
+                    <SearchView query={searchQuery} onClose={() => setSearchQuery('')} />
+                  ) : isAdmin ? (
                     <AdminView />
                   ) : isExplorer ? (
                     <ExplorerView group={activeGroup} />
@@ -90,10 +99,14 @@ export default function App() {
               status={status}
               articles={articles}
               onRetry={() => setReloadKey((key) => key + 1)}
+              isBookmarked={isBookmarked}
+              onToggleBookmark={toggleBookmark}
+              onOpenArticle={setSelectedArticle}
             />
           )}
         </main>
       </div>
+      {selectedArticle && <ArticleDialog article={selectedArticle} onClose={() => setSelectedArticle(null)} />}
     </div>
   );
 }

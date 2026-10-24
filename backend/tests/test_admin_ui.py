@@ -436,17 +436,17 @@ class AdminUiSourceContractTests(unittest.TestCase):
                     f"{path.name} truy cập {api} — token/phiên admin không được lưu bền",
                 )
 
-        #: Trên toàn bộ frontend, chỗ DUY NHẤT được phép dùng localStorage là tuỳ
-        #: chọn giao diện sáng/tối có sẵn (useTheme) — và khoá lưu phải là theme.
+        #: Frontend chỉ lưu tuỳ chọn giao diện và bookmark bài viết; token admin
+        #: không được lưu bền trong localStorage/session/cookie.
         storage_files = [
             path
             for path in self.src_files()
             if re.search(r"\bwindow\s*\.\s*localStorage\s*\.", self.read(path))
         ]
         self.assertEqual(
-            [path.name for path in storage_files],
-            ["useTheme.js"],
-            "chỉ useTheme.js được dùng localStorage",
+            sorted(path.name for path in storage_files),
+            ["useBookmarks.js", "useTheme.js"],
+            "chỉ theme/bookmark được dùng localStorage",
         )
         theme_source = self.read(SRC / "hooks" / "useTheme.js")
         self.assertIn("THEME_STORAGE_KEY", theme_source)

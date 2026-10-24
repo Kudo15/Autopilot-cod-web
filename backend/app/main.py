@@ -127,6 +127,69 @@ def list_articles() -> list[dict]:
         conn.close()
 
 
+# --- Public search (task 015): published-only, parameterized article search --
+SEARCH_QUERY_PARAMS = frozenset({"q", "category", "window"})
+SEARCH_WINDOWS = frozenset({"today", "7d", "30d", "all"})
+SEARCH_CATEGORIES = frozenset(
+    {"tip-trick", "ai-model", "policy-quota", "free-model-explorer", "ai-deals", "provider-comparison"}
+)
+
+
+def search_articles(
+    q: str | None = None,
+    category: str | None = None,
+    window: str = "all",
+) -> list[dict]:
+    """Search only REAL/PUBLISHED articles using bound SQL parameters."""
+    if window not in SEARCH_WINDOWS:
+        raise ValueError(f"invalid search window: {window!r}")
+    if category is not None and category not in SEARCH_CATEGORIES:
+        raise ValueError(f"invalid search category: {category!r}")
+    query = (q or "").strip()
+    if len(query) > 200:
+        raise ValueError("q exceeds 200 characters")
+
+    filters = ["article_status = ?", "(data_origin IS NULL OR data_origin != ?)"]
+    params: list[object] = ["PUBLISHED", "SAMPLE"]
+    if query:
+        filters.append("(title LIKE ? OR summary LIKE ? OR source LIKE ?)")
+        needle = f"%{query}%"
+        params.extend((needle, needle, needle))
+    if category is not None:
+        filters.append("category = ?")
+        params.append(category)
+    if window != "all":
+        days = {"today": 1, "7d": 7, "30d": 30}[window]
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        filters.append("published_at IS NOT NULL AND julianday(published_at) >= julianday(?)")
+        params.append(cutoff)
+
+    columns = ", ".join(ARTICLES_COLUMNS)
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"SELECT {columns} FROM articles WHERE {' AND '.join(filters)} ORDER BY id DESC",
+            params,
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/search")
+def public_search(request: Request) -> list[dict]:
+    filters = dict(request.query_params.multi_items())
+    unknown = sorted(key for key in filters if key not in SEARCH_QUERY_PARAMS)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}")
+    try:
+        return search_articles(
+            q=filters.get("q"), category=filters.get("category"), window=filters.get("window", "all")
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
 def _unknown_models_query_keys(filters: dict) -> list[str]:
     """Trả danh sách key không nằm trong danh sách cho phép (dùng cho 422)."""
     return sorted(k for k in filters if k not in MODELS_QUERY_PARAMS)

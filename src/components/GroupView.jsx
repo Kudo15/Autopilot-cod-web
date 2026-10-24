@@ -21,7 +21,7 @@ function EmptyState({ groupName }) {
   );
 }
 
-function ArticleFeed({ articles }) {
+function ArticleFeed({ articles, isBookmarked, onToggleBookmark, onOpenArticle }) {
   return (
     <div className="article-feed" aria-label="Bài viết">
       {articles.map((article) => (
@@ -29,7 +29,13 @@ function ArticleFeed({ articles }) {
           <p className="article-meta">{article.source || 'Biên tập'}{article.published_at ? ` · ${article.published_at}` : ''}</p>
           <h3>{article.title}</h3>
           {article.summary && <p>{article.summary}</p>}
-          {article.url && <a href={article.url}>Đọc bài viết</a>}
+          <div className="article-actions">
+            <button type="button" className="btn btn-small btn-secondary" onClick={() => onToggleBookmark(article.id)}>
+              {isBookmarked(article.id) ? '★ Đã lưu' : '☆ Lưu bài'}
+            </button>
+            <button type="button" className="btn btn-small" onClick={() => onOpenArticle(article)}>Đọc nhanh</button>
+            {article.url && <a href={article.url}>Nguồn chính thức</a>}
+          </div>
         </article>
       ))}
     </div>
@@ -51,7 +57,7 @@ function ErrorState({ groupName, onRetry }) {
   );
 }
 
-export function GroupView({ group, status, articles, onRetry }) {
+export function GroupView({ group, status, articles, onRetry, isBookmarked, onToggleBookmark, onOpenArticle }) {
   const groupArticles = articles.filter((article) => article.category === group.id);
 
   return (
@@ -62,7 +68,7 @@ export function GroupView({ group, status, articles, onRetry }) {
 
       {status === 'loading' && <LoadingState groupName={group.name} />}
       {status === 'empty' && groupArticles.length === 0 && <EmptyState groupName={group.name} />}
-      {status === 'empty' && groupArticles.length > 0 && <ArticleFeed articles={groupArticles} />}
+      {status === 'empty' && groupArticles.length > 0 && <ArticleFeed articles={groupArticles} isBookmarked={isBookmarked} onToggleBookmark={onToggleBookmark} onOpenArticle={onOpenArticle} />}
       {status === 'error' && <ErrorState groupName={group.name} onRetry={onRetry} />}
     </section>
   );
