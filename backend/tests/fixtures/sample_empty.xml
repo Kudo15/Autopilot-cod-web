@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SAMPLE fixture: a valid but empty feed channel. -->
+<rss version="2.0">
+  <channel>
+    <title>SAMPLE empty feed</title>
+    <link>https://feeds.example.test/empty</link>
+    <description>SAMPLE fixture — valid feed, zero items</description>
+  </channel>
+</rss>

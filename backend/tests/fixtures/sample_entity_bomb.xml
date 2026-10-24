@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SAMPLE fixture: hostile entity declaration used only for parser rejection. -->
+<!DOCTYPE rss [
+  <!ENTITY a "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+]>
+<rss version="2.0">
+  <channel>
+    <title>&a;&a;&a;&a;&a;</title>
+    <item>
+      <title>&a;&a;&a;</title>
+      <link>https://feeds.example.test/posts/bomb</link>
+    </item>
+  </channel>
+</rss>

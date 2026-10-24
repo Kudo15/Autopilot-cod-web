@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SAMPLE fixture: items with missing/unsafe fields must be ignored, not crash. -->
+<rss version="2.0">
+  <channel>
+    <title>SAMPLE feed with malformed items</title>
+    <item>
+      <link>https://feeds.example.test/posts/no-title</link>
+      <description>Missing title.</description>
+    </item>
+    <item>
+      <title>Missing link</title>
+      <description>No link element at all.</description>
+    </item>
+    <item>
+      <title>Unsafe link</title>
+      <link>http://127.0.0.1/internal</link>
+      <description>Loopback link must be rejected as untrusted data.</description>
+    </item>
+    <item>
+      <title>Non-http scheme</title>
+      <link>file:///etc/passwd</link>
+      <description>Never follow arbitrary schemes.</description>
+    </item>
+    <item>
+      <title>SAMPLE Valid Item</title>
+      <link>https://feeds.example.test/posts/valid</link>
+      <description>Only this item survives parsing.</description>
+    </item>
+  </channel>
+</rss>

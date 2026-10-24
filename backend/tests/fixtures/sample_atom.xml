@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SAMPLE fixture: structural Atom feed only. Not a real external observation. -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>SAMPLE Atom feed</title>
+  <link rel="alternate" href="https://feeds.example.test/atom"/>
+  <updated>2026-10-20T08:00:00Z</updated>
+  <entry>
+    <title>SAMPLE Atom Entry</title>
+    <link rel="alternate" href="https://feeds.example.test/atom/entry-one"/>
+    <summary>Atom sample summary.</summary>
+    <content type="html">Atom sample content body.</content>
+  </entry>
+  <entry>
+    <title>Atom entry without a link</title>
+    <summary>This entry has no link and must be ignored safely.</summary>
+  </entry>
+</feed>
