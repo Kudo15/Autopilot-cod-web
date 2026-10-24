@@ -1,7 +1,4 @@
-// GroupView: hiển thị nội dung của nhóm đang chọn qua 3 trạng thái
-// loading / empty / error — được quản lý bằng React state trong App.
-// Phase 2: chưa có backend, nên trạng thái dữ liệu thật là empty (chưa có nội dung).
-// Hai nút "Kiểm thử giao diện" chỉ dùng để quan sát trạng thái, không tạo dữ liệu giả.
+// GroupView renders the public article feed through loading, empty and error states.
 
 function LoadingState({ groupName }) {
   return (
@@ -24,6 +21,21 @@ function EmptyState({ groupName }) {
   );
 }
 
+function ArticleFeed({ articles }) {
+  return (
+    <div className="article-feed" aria-label="Bài viết">
+      {articles.map((article) => (
+        <article className="article-card" key={article.id}>
+          <p className="article-meta">{article.source || 'Biên tập'}{article.published_at ? ` · ${article.published_at}` : ''}</p>
+          <h3>{article.title}</h3>
+          {article.summary && <p>{article.summary}</p>}
+          {article.url && <a href={article.url}>Đọc bài viết</a>}
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function ErrorState({ groupName, onRetry }) {
   return (
     <div className="state state-error" role="alert">
@@ -39,27 +51,18 @@ function ErrorState({ groupName, onRetry }) {
   );
 }
 
-export function GroupView({ group, status, onRetry, onSimulateError, onReset }) {
+export function GroupView({ group, status, articles, onRetry }) {
+  const groupArticles = articles.filter((article) => article.category === group.id);
+
   return (
     <section className="group-view">
       <div className="group-view-header">
         <h2>{group.name}</h2>
-        <div className="state-controls" aria-label="Kiểm thử giao diện">
-          <span className="state-controls-label">Kiểm thử giao diện:</span>
-          {status === 'error' ? (
-            <button type="button" className="btn btn-small" onClick={onReset}>
-              Về trang trống
-            </button>
-          ) : (
-            <button type="button" className="btn btn-small" onClick={onSimulateError}>
-              Mô phỏng lỗi
-            </button>
-          )}
-        </div>
       </div>
 
       {status === 'loading' && <LoadingState groupName={group.name} />}
-      {status === 'empty' && <EmptyState groupName={group.name} />}
+      {status === 'empty' && groupArticles.length === 0 && <EmptyState groupName={group.name} />}
+      {status === 'empty' && groupArticles.length > 0 && <ArticleFeed articles={groupArticles} />}
       {status === 'error' && <ErrorState groupName={group.name} onRetry={onRetry} />}
     </section>
   );

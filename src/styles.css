@@ -200,6 +200,44 @@ body {
   font-size: 1.4rem;
 }
 
+.article-feed {
+  display: grid;
+  gap: 12px;
+}
+
+.article-card {
+  padding: 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.article-card h3,
+.article-card p {
+  margin: 0;
+}
+
+.article-card h3 {
+  margin-bottom: 8px;
+}
+
+.article-card p + p,
+.article-card p + a {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+.article-meta {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin-bottom: 8px !important;
+}
+
+.article-card a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .state-controls {
   display: flex;
   align-items: center;

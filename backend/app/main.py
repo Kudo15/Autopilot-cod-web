@@ -32,12 +32,24 @@ def health() -> dict[str, str]:
 
 @app.get("/api/articles")
 def list_articles() -> list[dict]:
-    """Đọc danh sách bài viết từ bảng articles (rỗng trong Phase 3)."""
+    """Trả các bài viết đã xuất bản, không gồm dữ liệu SAMPLE hay nội bộ."""
     conn = get_connection()
     try:
         columns = ", ".join(ARTICLES_COLUMNS)
+        available_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(articles)").fetchall()
+        }
+        filters: list[str] = []
+        params: list[str] = []
+        if "article_status" in available_columns:
+            filters.append("article_status = ?")
+            params.append("PUBLISHED")
+        if "data_origin" in available_columns:
+            filters.append("data_origin != ?")
+            params.append("SAMPLE")
+        where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
         rows = conn.execute(
-            f"SELECT {columns} FROM articles ORDER BY id DESC"
+            f"SELECT {columns} FROM articles{where_clause} ORDER BY id DESC", params
         ).fetchall()
         return [dict(row) for row in rows]
     finally:

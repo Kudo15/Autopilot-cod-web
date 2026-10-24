@@ -5,13 +5,12 @@ import { GroupView } from './components/GroupView.jsx';
 import { CONTENT_GROUPS, DEFAULT_GROUP_ID } from './data/groups.js';
 import { useTheme } from './hooks/useTheme.js';
 
-const LOADING_DURATION_MS = 450;
-
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [activeId, setActiveId] = useState(DEFAULT_GROUP_ID);
   const [reloadKey, setReloadKey] = useState(0);
-  const [status, setStatus] = useState('loading'); // 'loading' | 'empty' | 'error'
+  const [status, setStatus] = useState('loading');
+  const [articles, setArticles] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const activeGroup = useMemo(
@@ -19,15 +18,31 @@ export default function App() {
     [activeId]
   );
 
-  // Vào trạng thái loading khi chọn nhóm (hoặc bấm "Thử lại"),
-  // sau đó chuyển sang empty — Phase 2 chưa có backend nên mọi
-  // nhóm đều chưa có nội dung, không tạo dữ liệu giả.
   useEffect(() => {
+    const controller = new AbortController();
+
     setStatus('loading');
-    const timer = setTimeout(() => {
-      setStatus((current) => (current === 'loading' ? 'empty' : current));
-    }, LOADING_DURATION_MS);
-    return () => clearTimeout(timer);
+    fetch('/api/articles', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Article feed request failed: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (!Array.isArray(data)) {
+          throw new Error('Article feed response must be an array');
+        }
+        setArticles(data);
+        setStatus('empty');
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          setStatus('error');
+        }
+      });
+
+    return () => controller.abort();
   }, [activeId, reloadKey]);
 
   function handleSelectGroup(id) {
@@ -53,9 +68,8 @@ export default function App() {
           <GroupView
             group={activeGroup}
             status={status}
+            articles={articles}
             onRetry={() => setReloadKey((key) => key + 1)}
-            onSimulateError={() => setStatus('error')}
-            onReset={() => setStatus('empty')}
           />
         </main>
       </div>
