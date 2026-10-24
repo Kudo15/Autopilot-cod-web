@@ -45,7 +45,7 @@ def list_articles() -> list[dict]:
             filters.append("article_status = ?")
             params.append("PUBLISHED")
         if "data_origin" in available_columns:
-            filters.append("data_origin != ?")
+            filters.append("(data_origin IS NULL OR data_origin != ?)")
             params.append("SAMPLE")
         where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
         rows = conn.execute(

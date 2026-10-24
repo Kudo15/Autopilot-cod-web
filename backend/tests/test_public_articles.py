@@ -44,6 +44,9 @@ class PublicArticleFeedTests(unittest.TestCase):
                  "Private draft", None, "2026-10-24T00:00:00Z", "REAL", "DRAFT", "private"),
                 (3, "Sample", "https://example.test/sample", "SAMPLE", "tip-trick",
                  "Sample", None, "2026-10-24T00:00:00Z", "SAMPLE", "PUBLISHED", "private"),
+                (4, "Legacy published", "https://example.test/legacy", "editorial", "tip-trick",
+                 "Legacy public summary", "2026-10-24T00:00:00Z", "2026-10-24T00:00:00Z",
+                 None, "PUBLISHED", "do not expose"),
             ],
         )
         connection.commit()
@@ -51,7 +54,10 @@ class PublicArticleFeedTests(unittest.TestCase):
         with patch("backend.app.main.get_connection", return_value=connection):
             articles = list_articles()
 
-        self.assertEqual([article["title"] for article in articles], ["Published"])
+        self.assertEqual(
+            [article["title"] for article in articles],
+            ["Legacy published", "Published"],
+        )
         self.assertEqual(
             set(articles[0]),
             {"id", "title", "url", "source", "category", "summary", "published_at", "created_at"},
