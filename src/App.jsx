@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { GroupView } from './components/GroupView.jsx';
+import { ExplorerView } from './components/ExplorerView.jsx';
 import { CONTENT_GROUPS, DEFAULT_GROUP_ID } from './data/groups.js';
 import { useTheme } from './hooks/useTheme.js';
+
+//: Nhóm dùng API Explorer (GET /api/models) thay cho feed bài viết.
+const EXPLORER_GROUP_ID = 'free-model-explorer';
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
@@ -18,7 +22,12 @@ export default function App() {
     [activeId]
   );
 
+  // Nhóm Explorer tự gọi /api/models; các nhóm còn lại giữ nguyên feed bài viết.
+  const isExplorer = activeGroup.id === EXPLORER_GROUP_ID;
+
   useEffect(() => {
+    if (isExplorer) return undefined;
+
     const controller = new AbortController();
 
     setStatus('loading');
@@ -43,7 +52,7 @@ export default function App() {
       });
 
     return () => controller.abort();
-  }, [activeId, reloadKey]);
+  }, [activeId, reloadKey, isExplorer]);
 
   function handleSelectGroup(id) {
     setActiveId(id);
@@ -65,12 +74,16 @@ export default function App() {
           open={sidebarOpen}
         />
         <main className="app-main">
-          <GroupView
-            group={activeGroup}
-            status={status}
-            articles={articles}
-            onRetry={() => setReloadKey((key) => key + 1)}
-          />
+          {isExplorer ? (
+            <ExplorerView group={activeGroup} />
+          ) : (
+            <GroupView
+              group={activeGroup}
+              status={status}
+              articles={articles}
+              onRetry={() => setReloadKey((key) => key + 1)}
+            />
+          )}
         </main>
       </div>
     </div>

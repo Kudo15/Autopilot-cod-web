@@ -325,6 +325,246 @@ body {
   font-weight: 500;
 }
 
+/* ---------- Free Model Explorer (Phase 7 UI) ---------- */
+
+.explorer-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.explorer-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.explorer-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.explorer-filter select,
+.explorer-filter input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.88rem;
+  min-width: 150px;
+}
+
+.explorer-filter input {
+  min-width: 170px;
+}
+
+.explorer-filter-count {
+  align-self: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.explorer-compare-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.88rem;
+}
+
+.explorer-table-wrap {
+  overflow-x: auto;
+}
+
+.explorer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.explorer-table th,
+.explorer-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.explorer-table th {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  white-space: nowrap;
+}
+
+.explorer-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.explorer-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.model-name {
+  font-weight: 600;
+}
+
+.provider-name {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.api-id {
+  font-size: 0.82rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  word-break: break-all;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-free {
+  background: #1b5e20;
+  color: #c8e6c9;
+}
+
+.badge-paid {
+  background: #4e342e;
+  color: #ffccbc;
+}
+
+.badge-unknown {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.verif-verified {
+  background: #1b5e20;
+  color: #c8e6c9;
+}
+
+.verif-unverified {
+  background: #4a3b0a;
+  color: #ffe082;
+}
+
+.verif-stale {
+  background: #3e2723;
+  color: #ffab91;
+}
+
+.verif-expired {
+  background: #4e342e;
+  color: #ffccbc;
+}
+
+.verif-review {
+  background: #4a3b0a;
+  color: #ffecb3;
+}
+
+.verif-unknown {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.verif-time {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cap {
+  font-size: 0.78rem;
+}
+
+.cap-yes {
+  color: #a5d6a7;
+}
+
+.cap-no {
+  color: var(--text-muted);
+}
+
+.cap-unk {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.explorer-cta {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+:root[data-theme='light'] .badge-free,
+:root[data-theme='light'] .verif-verified {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+:root[data-theme='light'] .badge-paid,
+:root[data-theme='light'] .verif-expired {
+  background: #fbe9e7;
+  color: #7b1f10;
+}
+
+:root[data-theme='light'] .verif-unverified,
+:root[data-theme='light'] .verif-review {
+  background: #fff8e1;
+  color: #7a5b00;
+}
+
+:root[data-theme='light'] .verif-stale {
+  background: #efebe9;
+  color: #4e342e;
+}
+
+:root[data-theme='light'] .cap-yes {
+  color: #2e7d32;
+}
+
 /* ---------- Responsive (mobile) ---------- */
 
 @media (max-width: 760px) {
@@ -358,5 +598,20 @@ body {
   .theme-toggle {
     padding: 6px 10px;
     font-size: 0.78rem;
+  }
+
+  .explorer-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .explorer-filter select,
+  .explorer-filter input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .explorer-filter-count {
+    align-self: flex-start;
   }
 }
