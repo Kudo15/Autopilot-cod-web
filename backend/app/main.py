@@ -17,6 +17,7 @@ from .auth import require_admin
 from .database import ARTICLES_COLUMNS, get_connection, init_db
 from .ingest.importers import ImportValidationError, MAX_UPLOAD_BYTES, parse_upload, persist_import
 from .migrate import VERIFICATION_STATUS
+from .radar.daily import RADAR_TIMEZONE_NAME, RadarSchedule, daily_radar, validate_window
 
 # --- Phase 7: Model/Provider Explorer — hợp đồng public read-only ------------
 #: Tập free_status hợp lệ theo MISSION (khớp CHECK constraint của provider_models).
@@ -265,6 +266,68 @@ def public_models(request: Request) -> list[dict]:
             status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}"
         )
     return list_models(**filters)
+
+
+# --- Daily Radar (task 014/015): đọc tín hiệu thật + refresh cục bộ có xác thực ---
+#: Query parameter DUY NHẤT được phép trên GET /api/radar.
+RADAR_QUERY_PARAMS = frozenset({"window"})
+
+#: Mốc lịch 07:00 Asia/Ho_Chi_Minh — CHỈ trong bộ nhớ, hoãn sang request
+#: ('deferred-to-request'): không thread nền, không sleep, không gọi mạng, không
+#: publish/verify. Việc tính lại xảy ra khi có request (xem POST refresh bên dưới).
+RADAR_SCHEDULE = RadarSchedule(timezone_name=RADAR_TIMEZONE_NAME)
+
+
+@app.get("/api/radar")
+def public_radar(request: Request) -> dict:
+    """Daily Radar public chỉ-đọc: bài đã xuất bản + change event THẬT theo cửa sổ.
+
+    Cửa sổ ngoài allowlist -> 422; không tham số nào của người gọi đi vào SQL.
+    """
+    filters = dict(request.query_params.multi_items())
+    unknown = sorted(key for key in filters if key not in RADAR_QUERY_PARAMS)
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}"
+        )
+    window = filters.get("window", "today")
+    try:
+        validate_window(window)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    conn = get_connection()
+    try:
+        result = daily_radar(conn, window=window)
+    finally:
+        conn.close()
+    return {**result, "schedule": RADAR_SCHEDULE.snapshot()}
+
+
+@app.post("/api/admin/radar/refresh")
+def admin_radar_refresh(request: Request, window: str = "today") -> dict:
+    """Tính lại Daily Radar CỤC BỘ sau khi xác thực — không mạng, không publish/verify.
+
+    require_admin() chạy ở dòng ĐẦU handler, TRƯỚC khi mở/kết nối DB.
+    """
+    require_admin(request)
+    try:
+        validate_window(window)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    conn = get_connection()
+    try:
+        result = daily_radar(conn, window=window)
+    finally:
+        conn.close()
+    marked_at = RADAR_SCHEDULE.mark(datetime.now(timezone.utc))
+    return {
+        "status": "REFRESHED",
+        "deferred_to_request": True,
+        "refreshed_at": marked_at,
+        "window": window,
+        "schedule": RADAR_SCHEDULE.snapshot(marked_at),
+        "radar": result,
+    }
 
 
 def _multipart_fields(content_type: str, body: bytes) -> tuple[str, str, bytes]:
