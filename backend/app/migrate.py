@@ -8,6 +8,9 @@ Thiết kế (theo docs/MISSION.md mục 5):
 - 12 bảng nghiệp vụ: sources, raw_items, articles, providers, models,
   provider_models, offers, quota_observations, verification_records,
   change_events, collection_runs, editorial_reviews.
+- Bổ sung (sri-001b): bảng ledger scheduled_inbox_runs cho các lần chạy
+  inbox theo lịch — không thuộc 12 bảng MISSION nên KHÔNG thêm vào
+  BUSINESS_TABLES.
 - Một model có thể do nhiều provider cung cấp với quota/giá khác nhau
   (quan hệ models <-> provider_models <-> providers).
 - Trạng thái dùng đúng tập giá trị MISSION, bảo vệ bằng CHECK:
@@ -53,6 +56,10 @@ FREE_STATUS = ("FREE_API", "FREE_CREDIT", "FREE_TRIAL", "FREE_WEB_ONLY", "PROMO"
 VERIFICATION_STATUS = ("VERIFIED", "UNVERIFIED", "STALE", "EXPIRED", "NEEDS_REVIEW")
 RECOMMENDATION = ("SAFE_TO_TRY", "CAUTION", "INFO_ONLY")
 ARTICLE_STATUS = ("DRAFT", "PENDING_REVIEW", "PUBLISHED")
+
+#: Trạng thái một lần chạy inbox theo lịch (sri-001b): IMPORTED (đã nạp)
+#: hoặc QUARANTINED (bị cách ly chờ xử lý).
+INBOX_RUN_STATUS = ("IMPORTED", "QUARANTINED")
 
 
 def _check(values: tuple[str, ...]) -> str:
@@ -249,6 +256,23 @@ TABLES_DDL: tuple[str, ...] = (
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """ % _check(RECOMMENDATION),
+    # sri-001b: ledger các lần chạy inbox theo lịch — một dòng mỗi run,
+    # bảo vệ status và data_origin bằng CHECK, bộ đếm không âm.
+    """
+    CREATE TABLE IF NOT EXISTS scheduled_inbox_runs (
+        run_id TEXT PRIMARY KEY,
+        report_kind TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status %s),
+        finding_count INTEGER NOT NULL DEFAULT 0 CHECK (finding_count >= 0),
+        accepted_count INTEGER NOT NULL DEFAULT 0 CHECK (accepted_count >= 0),
+        skipped_count INTEGER NOT NULL DEFAULT 0 CHECK (skipped_count >= 0),
+        error_message TEXT,
+        processed_at TEXT NOT NULL,
+        data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE'))
+    )
+    """ % _check(INBOX_RUN_STATUS),
 )
 
 #: Index cho các truy vấn thường gặp (luôn CREATE INDEX IF NOT EXISTS).
@@ -286,6 +310,9 @@ INDEXES_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_change_events_detected_at ON change_events(detected_at)",
     "CREATE INDEX IF NOT EXISTS idx_collection_runs_source ON collection_runs(source_id)",
     "CREATE INDEX IF NOT EXISTS idx_editorial_reviews_article ON editorial_reviews(article_id)",
+    # sri-001b: query theo lịch theo dõi (thời điểm xử lý) và lọc theo trạng thái run.
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_inbox_runs_processed_at ON scheduled_inbox_runs(processed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_inbox_runs_status ON scheduled_inbox_runs(status)",
 )
 
 #: Cột nâng cấp cho bảng articles (đã tồn tại từ Phase 3, không có các cột này).
