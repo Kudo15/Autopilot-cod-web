@@ -16,6 +16,13 @@ from fastapi import FastAPI, HTTPException, Request
 from .auth import require_admin
 from .database import ARTICLES_COLUMNS, get_connection, init_db
 from .ingest.importers import ImportValidationError, MAX_UPLOAD_BYTES, parse_upload, persist_import
+from .inbox.service import (
+    INBOX_DIR_ENV,
+    list_inbox_articles,
+    list_inbox_runs,
+    resolve_inbox_dir,
+    scan_inbox,
+)
 from .migrate import VERIFICATION_STATUS
 from .radar.daily import RADAR_TIMEZONE_NAME, RadarSchedule, daily_radar, validate_window
 
@@ -723,3 +730,107 @@ def _apply_verification(
         "verified_at": verified_at,
         "data_origin": data_origin,
     }
+
+
+# --- Inbox admin API (sri-003): ranh giới xác thực của scheduled inbox --------
+# Mỗi handler gọi require_admin() ở dòng ĐẦU, TRƯỚC khi mở/kết nối DB.
+# Scan chỉ dùng thư mục inbox do server self-quản (resolve_inbox_dir()); mọi
+# response dùng allowlist tường minh — không raw report/provenance/quarantine
+# path/token/registry config/reviewer note.
+
+#: Các key DUY NHẤT của response scan — đúng bộ đếm InboxScanResult + mốc thời.
+INBOX_SCAN_KEYS = (
+    "status",
+    "scanned_at",
+    "imported_runs",
+    "skipped_runs",
+    "quarantined_runs",
+    "accepted_findings",
+    "skipped_findings",
+)
+
+#: Query parameter DUY NHẤT được phép trên GET /api/admin/inbox/runs & /articles.
+INBOX_LIST_QUERY_PARAMS = frozenset({"limit"})
+
+#: Trần limit (bounded) cho bất kỳ list endpoint inbox nào.
+INBOX_MAX_LIMIT = 500
+
+
+def _inbox_limit(request: Request) -> int | None:
+    """Đọc và xác thực query parameter ``limit`` cho list endpoint inbox."""
+    filters = dict(request.query_params.multi_items())
+    unknown = sorted(key for key in filters if key not in INBOX_LIST_QUERY_PARAMS)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}")
+    limit = filters.get("limit")
+    if limit is None:
+        return None
+    if not limit.isdigit():
+        raise HTTPException(status_code=422, detail="limit must be a non-negative integer")
+    value = int(limit)
+    if value > INBOX_MAX_LIMIT:
+        raise HTTPException(status_code=422, detail=f"limit must be at most {INBOX_MAX_LIMIT}")
+    return value
+
+
+@app.post("/api/admin/inbox/scan")
+def admin_inbox_scan(request: Request) -> dict:
+    """Quét thư mục inbox do server tự quản — không nhận dữ liệu từ request.
+
+    Không có path/artifact body/source URLs/model instructions nào đến từ
+    request: thư mục lấy từ cấu hình server (resolve_inbox_dir). require_admin
+    chạy TRƯỚC khi mở DB hay ngó inbox. Mọi bài sinh ra là DRAFT.
+    """
+    require_admin(request)
+    try:
+        inbox_dir = resolve_inbox_dir()
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    conn = get_connection()
+    try:
+        try:
+            result = scan_inbox(inbox_dir, conn)
+        except NotADirectoryError as error:
+            # Thư mục inbox thiếu/không hợp lệ → lỗi rõ ràng, không đổi state.
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        conn.close()
+    return {
+        "status": "SCANNED",
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "imported_runs": result.imported_runs,
+        "skipped_runs": result.skipped_runs,
+        "quarantined_runs": result.quarantined_runs,
+        "accepted_findings": result.accepted_findings,
+        "skipped_findings": result.skipped_findings,
+    }
+
+
+@app.get("/api/admin/inbox/runs")
+def admin_inbox_runs(request: Request) -> dict:
+    """Danh sách ledger run inbox — chỉ các cột ledgger an toàn (allowlist)."""
+    require_admin(request)
+    limit = _inbox_limit(request)
+    conn = get_connection()
+    try:
+        runs = list_inbox_runs(conn, limit=limit)
+    finally:
+        conn.close()
+    return {"runs": runs, "count": len(runs)}
+
+
+@app.get("/api/admin/inbox/articles")
+def admin_inbox_articles(request: Request) -> dict:
+    """Danh sách bài sinh bởi inbox — CHỈ các cột review an toàn (allowlist).
+
+    Review/evidence label & thời điểm quan sát hiển thị qua workflow duyệt có
+    sẵn; response này không bao giờ chứa raw/provenance/quarantine path.
+    """
+    require_admin(request)
+    limit = _inbox_limit(request)
+    conn = get_connection()
+    try:
+        articles = list_inbox_articles(conn, limit=limit)
+    finally:
+        conn.close()
+    return {"articles": articles, "count": len(articles)}

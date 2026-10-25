@@ -15,13 +15,16 @@ Hợp đồng:
   an toàn, không cập nhật/xóa row ledger gốc (INSERT OR IGNORE, không
   có destructive SQL).
 
-Chưa có ở task này (cố ý): AI/gateway enrichment, HTTP API, React UI,
-scheduler, docs, deploy, publication.
+Chưa có ở task này (cố ý): AI/gateway enrichment làm nguồn dữ liệu độc lập,
+scheduler, deployment, publication. API admin (sri-003) tái dụng các hàm
+``scan_inbox``/``list_inbox_runs``/``list_inbox_articles`` và cấu hình thư mục
+inbox do server tự quản qua ``resolve_inbox_dir()``.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
@@ -60,6 +63,35 @@ _RUN_KEYS: tuple[str, ...] = (
     "skipped_count",
     "error_message",
     "processed_at",
+    "data_origin",
+)
+
+#: Biến môi trường DUY NHẤT override thư mục inbox (server-owned). API không
+#: bao giờ nhận đường dẫn, artifact body hay nguồn từ request.
+INBOX_DIR_ENV = "SCHEDULED_INBOX_DIR"
+
+
+def resolve_inbox_dir() -> Path:
+    """Thư mục inbox do server tự quản — env override hoặc mặc định an toàn.
+
+    Đây là nguồn cấu hình DUY NHẤT của ``POST /api/admin/inbox/scan``: không
+    field nào của request được chấp nhận làm đường dẫn. Giá trị env là một
+    path server-side, không phải text từ artifact.
+    """
+    override = os.environ.get(INBOX_DIR_ENV, "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[2] / "inbox"
+
+
+#: Projection allowlist của list_inbox_articles — CHỈ các cột review an toàn
+#: trực tiếp trên articles; không SELECT *, không raw/provenance/quarantine.
+_ARTICLE_KEYS: tuple[str, ...] = (
+    "id",
+    "title",
+    "category",
+    "article_status",
+    "url",
     "data_origin",
 )
 
@@ -426,15 +458,47 @@ def scan_inbox(directory: Path, conn: sqlite3.Connection) -> InboxScanResult:
     )
 
 
-def list_inbox_runs(conn: sqlite3.Connection) -> list[dict]:
+def list_inbox_runs(conn: sqlite3.Connection, limit: int | None = None) -> list[dict]:
     """Dự phóng allowlist các row ledger, mới nhất trước.
 
     Chỉ trả các cột của chính ledger — không có report text, không có
-    đường dẫn filesystem, không có provenance blob.
+    đường dẫn filesystem, không có provenance blob. ``limit`` (nếu có) là
+    giá trị bounded dùng qua bind parameter; mọi giá trị khác là dữ liệu.
     """
-    rows = conn.execute(
+    sql = (
         "SELECT "
         + ", ".join(_RUN_KEYS)
         + " FROM scheduled_inbox_runs ORDER BY processed_at DESC, run_id DESC"
-    ).fetchall()
+    )
+    params: list[object] = []
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
     return [dict(zip(_RUN_KEYS, row)) for row in rows]
+
+
+def list_inbox_articles(
+    conn: sqlite3.Connection, limit: int | None = None
+) -> list[dict]:
+    """Dự phóng allowlist các bài sinh bởi inbox (source = SOURCE_ID).
+
+    CHỈ các cột review an toàn trực tiếp trên articles (id, title, category,
+    article_status, url nguồn chính thức, data_origin). Không SELECT *,
+    không raw/provenance/quarantine path, không token hay registry config.
+    Reviewer xem bằng chứng label & thời điểm quan sát qua workflow duyệt có
+    sẵn (provenance vẫn nằm nội bộ). ``limit`` dùng qua bind parameter.
+    """
+    sql = (
+        "SELECT "
+        + ", ".join(_ARTICLE_KEYS)
+        + " FROM articles WHERE source = ? "
+        "AND (data_origin IS NULL OR data_origin != 'SAMPLE') "
+        "ORDER BY id DESC"
+    )
+    params: list[object] = [SOURCE_ID]
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
+    return [dict(zip(_ARTICLE_KEYS, row)) for row in rows]
