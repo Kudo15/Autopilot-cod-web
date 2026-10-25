@@ -194,6 +194,11 @@ def _import_report(
     toàn bộ artifact."""
 
     def run() -> _Outcome:
+        # Draft biên tập an toàn (sri-002): luôn DRAFT, source-grounded, được
+        # sinh ngay trong vòng lặp tìm thấy. Import trong hàm để không tạo
+        # vòng import package ở thời điểm load module.
+        from ..editorial.inbox import create_inbox_article_draft  # noqa: WPS433 (tránh vòng import)
+
         existing = conn.execute(
             "SELECT content_hash FROM scheduled_inbox_runs WHERE run_id = ?",
             (report.run_id,),
@@ -241,6 +246,10 @@ def _import_report(
                     "risk_note": finding.risk_note,
                 }
             )
+            # Draft biên tập an toàn (sri-002): luôn DRAFT, source-grounded,
+            # lưu trong provenance riêng tư — không đổi lifecycle publication.
+            draft = create_inbox_article_draft(finding, observed_at=report.observed_at)
+            provenance["editorial_draft"] = draft.to_dict()
             conn.execute(
                 """INSERT INTO raw_items
                    (source_id, canonical_url, normalized_title, content_hash, raw_content,
