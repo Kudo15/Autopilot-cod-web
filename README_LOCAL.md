@@ -61,7 +61,10 @@ pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273     # đổi c�
 |---|---|
 | `uv run python -m backend.app.migrate` | exit 0 — 12 bảng nghiệp vụ sẵn sàng |
 | `uv run python -m backend.app.seed` | exit 0 — lần 1: 21 bản ghi SAMPLE + 3 bản ghi REAL kế thừa; lần 2: 0 bản ghi mới (idempotent) |
-| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 453 tests, OK** |
+| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 466 tests, OK** |
+| `uv run python -m backend.app.radar.run_daily --db-path <db-tạm>` | exit 0 — 1 dòng JSON status không secret, ledger bền ghi COMPLETED (đo trên DB tạm, KHÔNG đụng `backend/data/radar.db`) |
+| `pwsh -File scripts/register_radar_task.ps1 -Status` (task chưa đăng ký) | exit 1 — lỗi rõ "Task 'VuHocAIRadar-Daily' not found" (chế độ tra cứu, không tác dụng phụ) |
+| Parse `scripts/register_radar_task.ps1` bằng `System.Management.Automation.Language.Parser::ParseFile` | exit 0 — `PARSE_OK`, 0 lỗi cú pháp |
 | `npm run build` | exit 0 — `dist/index.html` 0.47 kB, CSS 14.84 kB, JS 234.63 kB (kèm cảnh báo Node 22.11) |
 | `pwsh -File scripts/dev.ps1 -Check -BackendPort 8123 -FrontendPort 5273` | exit 0 — cổng trống, sẵn sàng |
 | `pwsh -File scripts/dev.ps1 -Check` (cổng mặc định) | exit 1 — chẩn đoán đúng: cổng 8000 đang bị uvicorn PID 17468 chiếm (xem §5.1) |
@@ -133,7 +136,55 @@ Bộ test backend có một ca cần `ADMIN_TOKEN` **đã set trong environment*
 chưa set, ca đó thấy 500 và báo fail. Vì vậy hãy export `ADMIN_TOKEN` trước khi chạy full suite
 (xem lệnh ở §4).
 
-## 6. Ranh giới đã biết của bản localhost này
+## 6. Daily Radar — runner one-shot + Task Scheduler (s2-windows-scheduler)
+
+### 6.1 Runner one-shot
+
+```powershell
+uv run python -m backend.app.radar.run_daily
+```
+
+Một lần chạy rồi thoát (không server, không thread, không mạng, không publish):
+migration idempotent → mở database cục bộ đã cấu hình → gọi
+`run_daily_radar_once` **đúng một lần** với thời điểm hiện tại thực và owner tất định
+(`windows-task:radar-daily`) → in **một dòng JSON không secret** rồi thoát.
+
+- **exit 0** = job đúng hợp đồng — kể cả `not_due` (chưa đến 07:00 VN) hay
+  `already_completed` (identity hôm nay đã có trong ledger bền).
+- **exit 1** = thất bại bất ngờ của job — ledger bền đã ghi `FAILED`
+  (bounded retry theo hợp đồng s1); thông báo `error` chỉ gồm tên exception + thông điệp ngắn.
+
+Tham số tùy chọn: `--window today|7d|30d|all` (mặc định `today`), `--owner`
+(mặc định tất định), `--db-path <đường-dẫn>` (override DB — dùng cho smoke test
+trên DB tạm mà không đụng `backend/data/radar.db`).
+
+### 6.2 Đăng ký task hàng ngày 07:00 (chạy THỦ CÔNG bởi người dùng/coordinator)
+
+```powershell
+pwsh -File scripts/register_radar_task.ps1            # đăng ký idempotent
+pwsh -File scripts/register_radar_task.ps1 -Status    # tra cứu trạng thái
+```
+
+Script đăng ký task **per-user** `VuHocAIRadar-Daily` (LogonType Interactive,
+RunLevel Limited — không cần mật khẩu, không cần quyền admin), trigger **daily 07:00**
+giờ địa phương, action chạy đúng runner trên bằng `uv` (đường dẫn tuyệt đối của uv +
+working directory là đường dẫn tuyệt đối của repo, tính từ `$PSScriptRoot`),
+kèm `StartWhenAvailable` (máy off lúc 07:00 thì bù chạy sau khi khởi động) và
+giới hạn thời gian chạy 10 phút.
+
+An toàn: đăng ký **idempotent** — task đã tồn tại thì in `already registered` và
+thoát 0, **không chỉnh sửa, không xóa** (script không bao giờ
+`Unregister-ScheduledTask`); thiếu tiên quyết (repo/uv/runner module) thì báo lỗi rõ
+và exit 2; không có kết nối remote; không đụng database.
+
+> **NOT_VERIFIED — chưa đăng ký task thật trên máy này.** Theo biên độ của tác vụ,
+> hành động đăng ký Windows Task Scheduler được dành cho coordinator sau khi code đã
+> verify. Đã kiểm chứng: parse cú pháp (PARSE_OK), hợp đồng nội dung (3 test trong
+> `backend/tests/test_radar_daily_runner.py`), chế độ `-Status` (exit 1 rõ ràng khi
+> task chưa tồn tại), và runner one-shot trên DB tạm (exit 0, JSON, ledger COMPLETED).
+> Sau khi đăng ký, kiểm tra bằng `-Status` (State = Ready, NextRunTime = 07:00 ngày mai).
+
+## 7. Ranh giới đã biết của bản localhost này
 
 - Chỉ chạy **localhost** (`127.0.0.1`), không deploy, không push, không tạo remote.
 - Bản ghi **REAL** hiện chỉ có **1 bài báo đã xuất bản kế thừa từ Vũ Học AI v0.3.1**; các bảng
