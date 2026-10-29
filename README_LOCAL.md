@@ -61,9 +61,10 @@ pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273     # đổi c�
 |---|---|
 | `uv run python -m backend.app.migrate` | exit 0 — 12 bảng nghiệp vụ sẵn sàng |
 | `uv run python -m backend.app.seed` | exit 0 — lần 1: 21 bản ghi SAMPLE + 3 bản ghi REAL kế thừa; lần 2: 0 bản ghi mới (idempotent) |
-| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 330 tests, OK** |
-| `npm run build` | exit 0 — `dist/index.html` 0.47 kB, CSS 11.20 kB, JS 218.56 kB (kèm cảnh báo Node 22.11) |
+| `uv run python -m unittest discover -s backend/tests -p "test_*.py"` (có `ADMIN_TOKEN`) | exit 0 — **Ran 453 tests, OK** |
+| `npm run build` | exit 0 — `dist/index.html` 0.47 kB, CSS 14.84 kB, JS 234.63 kB (kèm cảnh báo Node 22.11) |
 | `pwsh -File scripts/dev.ps1 -Check -BackendPort 8123 -FrontendPort 5273` | exit 0 — cổng trống, sẵn sàng |
+| `pwsh -File scripts/dev.ps1 -Check` (cổng mặc định) | exit 1 — chẩn đoán đúng: cổng 8000 đang bị uvicorn PID 17468 chiếm (xem §5.1) |
 | `pwsh -File scripts/dev.ps1 -BackendPort 8123 -FrontendPort 5273 -AutoStopSeconds 25` | exit 0 — migration OK, backend + frontend **UP**, dừng sạch |
 
 Chi tiết đầy đủ (kể cả hạng mục **NOT_VERIFIED**) ở `docs/QA_REPORT.md`.
@@ -116,9 +117,14 @@ You are using Node.js 22.11.0. Vite requires Node.js version 20.19+ or 22.12+. P
 
 Build **vẫn exit 0**; đây là cảnh báo thông tin. Nếu muốn hết cảnh báo, nâng Node lên 22.12+ hoặc 20.19+.
 
-### 5.4 Thiếu dependency
+### 5.4 Thiếu dependency và nhận diện Python 3.13
 
-`-Check` báo thiếu `.venv`/`node_modules` kèm đúng lệnh cần chạy (`uv sync` / `npm install`). Dùng
+`-Check` kiểm tra Python 3.13 theo 3 bậc an toàn:
+1. `uv python find 3.13`: nếu uv hoạt động bình thường, chấp nhận trực tiếp.
+2. Fallback `.venv` dự án: nếu `uv python find` thất bại (ví dụ uv cache bị từ chối quyền trên Windows), script tự động kiểm tra `.venv\Scripts\python.exe` của dự án; nếu đúng Python 3.13 thì nghiệm thu OK.
+3. Nếu cả hai đường đều không chứng minh được: báo lỗi rõ ràng yêu cầu chạy `uv python install 3.13` hoặc tạo `.venv` Python 3.13.
+
+`-Check` cũng báo thiếu `.venv`/`node_modules` kèm đúng lệnh cần chạy (`uv sync` / `npm install`). Dùng
 `-NoInstall` khi muốn chặn mọi bước cài qua mạng ngoài ý muốn.
 
 ### 5.5 Kết quả test phụ thuộc environment

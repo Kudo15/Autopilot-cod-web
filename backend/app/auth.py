@@ -2,8 +2,10 @@
 
 Hợp đồng (task 010 / P8b):
 - Token kỳ vọng chỉ đọc từ ``os.environ`` tại thời điểm request; cấu hình thiếu
-  sẽ trả về lỗi cấu hình server rõ ràng, KHÔNG bao giờ tiết lộ giá trị secret.
-- Chỉ chấp nhận ``Authorization: Bearer <token>`` hoặc header ``X-Admin-Token``;
+  chỉ trả về lỗi cấu hình server rõ ràng (500) khi request ĐÃ trình bày
+  credential — thiếu credential thì 401 luôn, xét TRƯỚC cấu hình server;
+  KHÔNG bao giờ tiết lộ giá trị secret.
+- Chỉ chấp nhận ``Authorization: Bearer *** hoặc header ``X-Admin-Token``;
   thiếu token -> 401, sai token -> 403.
 - Không token nào được hardcode, đóng gói, nằm trong JSON hay log.
 - Header HTTP là latin-1, nên ADMIN_TOKEN thực tế phải là ASCII (token sinh ngẫu
@@ -67,23 +69,27 @@ def require_admin(
     bao giờ echo token kỳ vọng.
 
     Raises:
-        HTTPException 500: ADMIN_TOKEN chưa được cấu hình (không kèm secret).
-        HTTPException 401: thiếu token.
+        HTTPException 401: thiếu token — xét trước cấu hình server.
+        HTTPException 500: ADMIN_TOKEN chưa được cấu hình nhưng request đã trình
+            bày credential (không kèm secret).
         HTTPException 403: token không khớp / scheme không được hỗ trợ.
     """
     if request is not None:
         authorization = request.headers.get("authorization")
         x_admin_token = request.headers.get("x-admin-token")
 
+    presented, supplied = _supplied_credential(authorization, x_admin_token)
+    if not presented:
+        # Thiếu credential là lỗi của NGƯỜI GỌI -> 401, kiểm tra TRƯỚC cấu hình server
+        # để request chưa xác thực không bao giờ lộ trạng thái cấu hình (500).
+        raise HTTPException(status_code=401, detail="admin token is required")
+
     try:
         expected = expected_admin_token()
     except AdminConfigurationError as error:
-        # Chỉ báo tên biến + lý do — tuyệt đối không in giá trị token nào.
+        # Credential ĐÃ trình bày nhưng server thiếu ADMIN_TOKEN -> lỗi cấu hình rõ
+        # ràng. Chỉ báo tên biến + lý do — tuyệt đối không in giá trị token nào.
         raise HTTPException(status_code=500, detail=str(error)) from error
-
-    presented, supplied = _supplied_credential(authorization, x_admin_token)
-    if not presented:
-        raise HTTPException(status_code=401, detail="admin token is required")
     # So sánh hằng thời gian trên bytes: không crash với token chứa ký tự ngoài ASCII.
     if not supplied or not hmac.compare_digest(
         supplied.encode("utf-8"), expected.encode("utf-8")

@@ -219,20 +219,40 @@ function Invoke-Preflight {
     }
 
     # --- 3. Python + dependency backend ------------------------------------
-    if ($null -ne $uv) {
-        $pyProbe = Invoke-Native -FilePath $uv -Arguments @('python', 'find', '3.13') -Quiet
-        if ($pyProbe.Code -eq 0) {
-            Write-Ok "Python 3.13: $($pyProbe.Output -join ' ')"
-        } else {
-            [void]$problems.Add('Thieu Python 3.13 cho du an: chay `uv python install 3.13`')
-        }
-    }
-
     $venvReady = $false
     if (Test-Path -LiteralPath $venvPython) {
         $import = Invoke-Native -FilePath $venvPython -Arguments @('-c', 'import fastapi, uvicorn') -Quiet
         $venvReady = ($import.Code -eq 0)
     }
+
+    # ``uv python find`` can fail for an otherwise valid local venv when uv's
+    # shared cache is unreadable (common on managed Windows hosts). Prove the
+    # runtime from the project venv before reporting a missing Python 3.13.
+    $python313Ready = $false
+    if ($null -ne $uv) {
+        $pyProbe = Invoke-Native -FilePath $uv -Arguments @('python', 'find', '3.13') -Quiet
+        # Tin exit code cua uv: `uv python find 3.13` chi tra 0 khi uv that suc tim
+        # duoc Python 3.13 — duong dan in ra co the khong chua chu "3.13".
+        if ($pyProbe.Code -eq 0) {
+            Write-Ok "Python 3.13: $($pyProbe.Output -join ' ')"
+            $python313Ready = $true
+        } else {
+            Write-Warn "uv python find 3.13 khong kha dung (exit $($pyProbe.Code)); se kiem tra .venv cua project."
+        }
+    } else {
+        Write-Warn 'uv python find 3.13 khong kha dung (thieu uv); se kiem tra .venv cua project.'
+    }
+    if (-not $python313Ready -and (Test-Path -LiteralPath $venvPython)) {
+        $venvVersion = Invoke-Native -FilePath $venvPython -Arguments @('-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")') -Quiet
+        if ($venvVersion.Code -eq 0 -and (($venvVersion.Output -join ' ') -match '^3\.13')) {
+            Write-Ok "Python 3.13 project venv: $venvPython"
+            $python313Ready = $true
+        }
+    }
+    if (-not $python313Ready) {
+        [void]$problems.Add('Thieu Python 3.13 cho du an: chay `uv python install 3.13` hoac tao .venv Python 3.13')
+    }
+
     if ($venvReady) {
         Write-Ok "dependency backend da cai (.venv co fastapi + uvicorn)"
     } else {
@@ -431,6 +451,7 @@ try {
                 -Arguments @('run', '--no-sync', 'uvicorn', 'backend.app.main:app', '--host', '127.0.0.1', '--port', "$BackendPort") `
                 -OutLog (Join-Path $LogsDir 'backend.out.log') -ErrLog (Join-Path $LogsDir 'backend.err.log')
 
+            $env:VITE_BACKEND_PORT = "$BackendPort"
             $frontendProcess = Start-DevServer -Label 'frontend' -FilePath $comspec `
                 -Arguments @('/c', $preflight.Npm, 'run', 'dev', '--', '--host', '127.0.0.1', '--port', "$FrontendPort") `
                 -OutLog (Join-Path $LogsDir 'frontend.out.log') -ErrLog (Join-Path $LogsDir 'frontend.err.log')

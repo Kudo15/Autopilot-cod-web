@@ -2,6 +2,8 @@
 
 Repo: **Vũ Học AI Radar v1.0 (localhost)**. Đọc `docs/MISSION.md` (đề bài đầy đủ) và `PLAN.md` (chia phase) trước khi làm.
 
+Đầu mỗi session: đọc .team/CHARTER.md và tuân thủ.
+
 ## Luật cứng
 
 1. **Chỉ sửa file nằm trong `files_allowed` của phase đang chạy.** Sửa ra ngoài ⇒ pipeline dừng phase đó và người

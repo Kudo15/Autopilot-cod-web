@@ -2,6 +2,7 @@
 // không ghi localStorage/sessionStorage/cookie, không đưa vào bundle, không hiện
 // trong bất kỳ render JSON/error nào. Khi cấu hình đã có sẵn (phiên admin) thì
 // ẩn khung để giữ trải nghiệm gọn; người dùng vẫn có thể thoát ra và nhập lại.
+import React from 'react';
 import { useState } from 'react';
 import { hasToken } from './adminClient.js';
 

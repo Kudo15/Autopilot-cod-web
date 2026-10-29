@@ -394,6 +394,24 @@ class AdminUiSourceContractTests(unittest.TestCase):
         groups_source = self.read(SRC / "data" / "groups.js")
         self.assertIn("admin-radar", groups_source, "nhóm Admin Radar phải còn trong sidebar")
 
+    def test_app_imports_react_for_jsx_runtime(self) -> None:
+        source = self.read(SRC / "App.jsx")
+        self.assertRegex(
+            source,
+            r"^import React\s+from\s+['\"]react['\"];",
+            "App.jsx phải import React để JSX không lỗi khi chạy trên browser",
+        )
+
+    def test_all_jsx_components_import_react_for_classic_jsx_runtime(self) -> None:
+        for path in sorted(SRC.rglob("*.jsx")):
+            source = self.read(path)
+            if re.search(r"<[A-Za-z]", source):
+                self.assertRegex(
+                    source,
+                    r"(?m)^import React\s+from\s+['\"]react['\"];",
+                    f"{path.relative_to(SRC.parent)} phải import React cho JSX runtime",
+                )
+
     def test_no_admin_view_regresses_the_existing_routes(self) -> None:
         app_source = self.read(SRC / "App.jsx")
         for kept in ("/api/articles", "ExplorerView", "GroupView", "free-model-explorer"):

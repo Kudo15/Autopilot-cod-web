@@ -145,6 +145,15 @@ class AdminTokenConfigurationTests(unittest.TestCase):
         self.assertIn(ADMIN_TOKEN_ENV, str(ctx.exception.detail))
         self.assertNotIn("whatever", str(ctx.exception.detail))
 
+    def test_missing_credential_is_401_even_when_token_unconfigured(self) -> None:
+        """Regression: thiếu credential là lỗi người gọi -> 401, kiểm tra TRƯỚC cấu hình
+        server; request chưa xác thực không bao giờ rơi vào nhánh 500 của ADMIN_TOKEN."""
+        request = make_request()
+        with patch.dict(os.environ, {ADMIN_TOKEN_ENV: ""}):
+            with self.assertRaises(HTTPException) as ctx:
+                require_admin(request)
+        self.assertEqual(ctx.exception.status_code, 401)
+
 
 class AdminAuthBoundaryTests(unittest.TestCase):
     """401 khi thiếu token, 403 khi sai token; chỉ nhận Bearer / X-Admin-Token."""

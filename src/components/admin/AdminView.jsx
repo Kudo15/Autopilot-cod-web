@@ -1,3 +1,5 @@
+import React from 'react';
+
 // AdminView — bề mặt điều hành local cho luồng duyệt/xác minh (task 011).
 //
 // Tổ chức:

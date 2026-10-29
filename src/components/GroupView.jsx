@@ -1,3 +1,5 @@
+import React from 'react';
+
 // GroupView renders the public article feed through loading, empty and error states.
 
 function LoadingState({ groupName }) {

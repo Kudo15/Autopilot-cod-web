@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Panel duyệt bài: đọc GET /api/admin/reviews và ghi POST
 // /api/admin/articles/{id}/review.
 //

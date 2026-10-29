@@ -8,6 +8,7 @@ Chưa có bộ thu thập dữ liệu — không có bài viết thật nào tro
 """
 from __future__ import annotations
 
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -23,8 +24,9 @@ from .inbox.service import (
     resolve_inbox_dir,
     scan_inbox,
 )
-from .migrate import VERIFICATION_STATUS
+from .migrate import REPOSITORY_DIFFICULTY, VERIFICATION_STATUS
 from .radar.daily import RADAR_TIMEZONE_NAME, RadarSchedule, daily_radar, validate_window
+from .radar import scheduler as radar_scheduler
 
 # --- Phase 7: Model/Provider Explorer — hợp đồng public read-only ------------
 #: Tập free_status hợp lệ theo MISSION (khớp CHECK constraint của provider_models).
@@ -338,6 +340,407 @@ def public_models(request: Request) -> list[dict]:
     return list_models(**filters)
 
 
+# --- Promotion Radar (task r1): public offers + admin offer verification ----
+# Luật active: default CHỈ trả offer REAL + VERIFIED + chưa hết hạn tại now
+# (ends_at/valid_until) + official CTA hợp lệ http(s). SAMPLE, UNVERIFIED,
+# EXPIRED, thiếu CTA tuyệt đối không được trình bày như ưu đãi active.
+# Filter status cho phép xem lịch sử: row vẫn gắn verification_status thật và
+# cờ is_active tính riêng — UI không bao giờ gọi là active khi is_active != True.
+
+#: Query parameter DUY NHẤT được phép trên GET /api/offers.
+OFFERS_QUERY_PARAMS = frozenset({"q", "provider", "offer_type", "status", "limit"})
+
+#: Trần limit bounded cho GET /api/offers: mặc định và tối đa rõ ràng.
+OFFERS_DEFAULT_LIMIT = 50
+OFFERS_MAX_LIMIT = 100
+
+#: Độ dài tối đa của chuỗi tìm kiếm q.
+OFFERS_MAX_Q_LENGTH = 200
+
+#: Filter status: 'active' (mặc định) hoặc một trạng thái xác minh để xem
+#: lịch sử (không bao giờ thay thế cho 'active').
+OFFER_STATUS_FILTERS = frozenset({"active"}) | frozenset(VERIFICATION_STATUS)
+
+#: Cột public DUY NHẤT của một row offer (SELECT tường minh — không code
+#: khuyến mãi, không raw/provenance/reviewer note/snapshot nội bộ).
+PUBLIC_OFFER_FIELDS = (
+    "id", "title", "provider_id", "provider_name", "offer_type",
+    "description", "terms", "starts_at", "ends_at",
+    "account_required", "card_required",
+    "verification_status", "last_verified", "valid_until",
+    "official_url", "is_active",
+)
+
+#: SELECT tường minh offer + tên provider (join an toàn, loại SAMPLE ở cả hai
+#: bảng). Cột `code` (mã khuyến mãi nội bộ) tuyệt đối không được SELECT.
+_OFFERS_BASE_SELECT = """
+SELECT o.id AS id,
+       o.title AS title,
+       o.provider_id AS provider_id,
+       p.name AS provider_name,
+       o.offer_type AS offer_type,
+       o.description AS description,
+       o.terms AS terms,
+       o.starts_at AS starts_at,
+       o.ends_at AS ends_at,
+       o.account_required AS account_required,
+       o.card_required AS card_required,
+       o.verification_status AS verification_status,
+       o.last_verified AS last_verified,
+       o.valid_until AS valid_until,
+       p.website AS website
+FROM offers AS o
+LEFT JOIN providers AS p ON p.provider_id = o.provider_id
+WHERE (o.data_origin IS NULL OR o.data_origin = 'REAL')
+  AND (p.data_origin IS NULL OR p.data_origin != 'SAMPLE')
+"""
+
+
+def _parse_offer_timestamp(value: str | None) -> datetime | None:
+    """Parse mốc thời gian offer; rỗng/NULL/không parse được -> None."""
+    if value is None or not str(value).strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _valid_cta_url(value: str | None) -> bool:
+    """Official CTA hợp lệ: http/https kèm domain. Scheme lạ/URL hỏng -> False."""
+    if not isinstance(value, str):
+        return False
+    candidate = value.strip()
+    if not (candidate.startswith("https://") or candidate.startswith("http://")):
+        return False
+    try:
+        parsed = urllib.parse.urlparse(candidate)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def _offer_deadline_passed(value: str | None, now: datetime) -> bool:
+    """Không có mốc hết hạn (NULL/rỗng) = chưa hết hạn.
+
+    Mốc tồn tại nhưng không parse được bị coi là ĐÃ hết hạn (thận trọng):
+    không bao giờ trình bày một offer hết hạn không kiểm tra được là active.
+    """
+    if value is None or not str(value).strip():
+        return False
+    parsed = _parse_offer_timestamp(value)
+    if parsed is None:
+        return True
+    return parsed <= now
+
+
+def _offer_is_active(row: dict, now: datetime) -> bool:
+    """Luật active dùng chung cho cờ is_active của MỌI row public.
+
+    VERIFIED + CTA http(s) hợp lệ + ends_at/valid_until chưa qua mốc now.
+    """
+    if (row.get("verification_status") or "") != "VERIFIED":
+        return False
+    if not _valid_cta_url(row.get("official_url")):
+        return False
+    if _offer_deadline_passed(row.get("ends_at"), now):
+        return False
+    if _offer_deadline_passed(row.get("valid_until"), now):
+        return False
+    return True
+
+
+def list_offers(
+    q: str | None = None,
+    provider: str | None = None,
+    offer_type: str | None = None,
+    status: str | None = None,
+    limit: str | None = None,
+) -> list[dict]:
+    """Promotion Radar public — cột allowlist tường minh, bind parameters.
+
+    Default (status='active') chỉ trả ưu đãi THẬT SỰ active; status khác là
+    chế độ xem lịch sử theo verification_status (vẫn chỉ dữ liệu REAL, mỗi
+    row được gắn is_active tính riêng tại `now`).
+    """
+    effective_status = (status or "active").strip() or "active"
+    if effective_status not in OFFER_STATUS_FILTERS:
+        raise HTTPException(status_code=422, detail=f"invalid status: {effective_status!r}")
+    query = (q or "").strip()
+    if len(query) > OFFERS_MAX_Q_LENGTH:
+        raise HTTPException(
+            status_code=422, detail=f"q exceeds {OFFERS_MAX_Q_LENGTH} characters"
+        )
+    if provider is not None and not provider.strip():
+        raise HTTPException(status_code=422, detail="provider must not be empty")
+    if offer_type is not None and offer_type not in FREE_STATUS_VALUES:
+        raise HTTPException(status_code=422, detail=f"invalid offer_type: {offer_type!r}")
+    effective_limit = OFFERS_DEFAULT_LIMIT
+    if limit is not None:
+        if not str(limit).isdigit():
+            raise HTTPException(
+                status_code=422, detail="limit must be a positive integer"
+            )
+        value = int(limit)
+        if value < 1 or value > OFFERS_MAX_LIMIT:
+            raise HTTPException(
+                status_code=422,
+                detail=f"limit must be between 1 and {OFFERS_MAX_LIMIT}",
+            )
+        effective_limit = value
+
+    now = datetime.now(timezone.utc)
+    where: list[str] = []
+    params: list[object] = []
+    if effective_status == "active":
+        # Chưa hết hạn tại now; mốc rỗng = mở; mốc hỏng (julianday NULL) bị loại.
+        where.append("o.verification_status = 'VERIFIED'")
+        where.append("p.website IS NOT NULL AND TRIM(p.website) != ''")
+        where.append("(p.website LIKE 'https://%' OR p.website LIKE 'http://%')")
+        where.append(
+            "(o.ends_at IS NULL OR TRIM(o.ends_at) = '' "
+            "OR julianday(o.ends_at) > julianday(?))"
+        )
+        where.append(
+            "(o.valid_until IS NULL OR TRIM(o.valid_until) = '' "
+            "OR julianday(o.valid_until) > julianday(?))"
+        )
+        params.extend((now.isoformat(), now.isoformat()))
+    else:
+        where.append("o.verification_status = ?")
+        params.append(effective_status)
+    if query:
+        where.append("(o.title LIKE ? OR o.description LIKE ?)")
+        needle = f"%{query}%"
+        params.extend((needle, needle))
+    if provider is not None and provider.strip():
+        where.append("(o.provider_id = ? OR p.name = ?)")
+        provider_val = provider.strip()
+        params.extend((provider_val, provider_val))
+    if offer_type is not None:
+        where.append("o.offer_type = ?")
+        params.append(offer_type)
+
+    sql = _OFFERS_BASE_SELECT
+    if where:
+        sql += " AND " + " AND ".join(where)
+    # Sắp xếp ưu đãi sắp hết hạn lên đầu; offer không có ends_at xuống cuối.
+    sql += (
+        " ORDER BY CASE WHEN o.ends_at IS NULL OR TRIM(o.ends_at) = '' "
+        "THEN 99999999 ELSE julianday(o.ends_at) END ASC, o.id ASC"
+    )
+    sql += " LIMIT ?"
+    params.append(effective_limit)
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    result: list[dict] = []
+    for row in rows:
+        record = dict(row)
+        website = record.pop("website", None)
+        cta_url = website.strip() if _valid_cta_url(website) else None
+        record["official_url"] = cta_url
+        record["is_active"] = _offer_is_active(record, now)
+        result.append({k: record.get(k) for k in PUBLIC_OFFER_FIELDS})
+    return result
+
+
+@app.get("/api/offers")
+def public_offers(request: Request) -> dict:
+    """GET /api/offers — Promotion Radar public.
+
+    Chỉ nhận query parameter trong allowlist (tham số lạ -> 422); default
+    chỉ trả ưu đãi thật, đã xác minh, còn hiệu lực và có official CTA.
+    """
+    filters = dict(request.query_params.multi_items())
+    unknown = sorted(key for key in filters if key not in OFFERS_QUERY_PARAMS)
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}"
+        )
+    offers = list_offers(**filters)
+    return {"offers": offers, "count": len(offers)}
+
+
+# Cột nội bộ DUY NHẤT trả về từ GET /api/admin/offers (kèm code khuyến mãi
+# và data_origin để admin nhận biết SAMPLE) — không raw/provenance/snapshot.
+ADMIN_OFFER_FIELDS = (
+    "id", "provider_id", "provider_name", "title", "offer_type", "code",
+    "description", "terms", "starts_at", "ends_at",
+    "account_required", "card_required",
+    "verification_status", "last_verified", "valid_until",
+    "official_url", "data_origin", "created_at",
+)
+
+_ADMIN_OFFERS_SELECT = """
+SELECT o.id AS id,
+       o.provider_id AS provider_id,
+       p.name AS provider_name,
+       o.title AS title,
+       o.offer_type AS offer_type,
+       o.code AS code,
+       o.description AS description,
+       o.terms AS terms,
+       o.starts_at AS starts_at,
+       o.ends_at AS ends_at,
+       o.account_required AS account_required,
+       o.card_required AS card_required,
+       o.verification_status AS verification_status,
+       o.last_verified AS last_verified,
+       o.valid_until AS valid_until,
+       p.website AS website,
+       o.data_origin AS data_origin,
+       o.created_at AS created_at
+FROM offers AS o
+LEFT JOIN providers AS p ON p.provider_id = o.provider_id
+ORDER BY o.id
+"""
+
+
+@app.get("/api/admin/offers")
+def admin_offers(request: Request) -> list[dict]:
+    """Danh sách offer nội bộ (gồm cả row SAMPLE, gắn nhãn) — chỉ đã xác thực."""
+    require_admin(request)
+    conn = get_connection()
+    try:
+        rows = conn.execute(_ADMIN_OFFERS_SELECT).fetchall()
+    finally:
+        conn.close()
+    result: list[dict] = []
+    for row in rows:
+        rec = dict(row)
+        website = rec.pop("website", None)
+        rec["official_url"] = website.strip() if _valid_cta_url(website) else website
+        result.append({k: rec.get(k) for k in ADMIN_OFFER_FIELDS})
+    return result
+
+
+@app.post("/api/admin/offers/{offer_id}/verification")
+async def admin_offer_verification(offer_id: int, request: Request) -> dict:
+    """Ghi bản xác minh offer đã xác thực — không bao giờ verify SAMPLE.
+
+    require_admin() chạy ở dòng ĐẦU handler, TRƯỚC khi mở/kết nối DB.
+    """
+    require_admin(request)
+    payload = await _json_object(request)
+    _require_body_keys(payload, ("status", "evidence", "note", "method"))
+    status = payload.get("status")
+    if status not in VERIFICATION_STATUSES:
+        raise HTTPException(status_code=422, detail=f"invalid verification status: {status!r}")
+    evidence = _opt_text(payload.get("evidence"), "evidence")
+    note = _opt_text(payload.get("note"), "note")
+    if evidence is None and note is None:
+        raise HTTPException(
+            status_code=422, detail="verification requires explicit evidence or note"
+        )
+    method = _opt_text(payload.get("method"), "method") or "manual"
+    conn = get_connection()
+    try:
+        return _apply_offer_verification(conn, offer_id, status, evidence, note, method)
+    finally:
+        conn.close()
+
+
+def _apply_offer_verification(
+    conn,
+    offer_id: int,
+    status: str,
+    evidence: str | None,
+    note: str | None,
+    method: str,
+) -> dict:
+    """Ghi bản xác minh offer + cập nhật trạng thái trong MỘT transaction.
+
+    Schema bắt buộc verification_records.provider_model_id NOT NULL, nên offer
+    phải liên kết provider_model THẬT để ghi được — offer mồ côi bị 409 rõ
+    ràng. `last_verified` chỉ cập nhật khi VERIFIED (không bịa freshness);
+    không chạm quota/credit hay bất kỳ trường dữ liệu nào khác.
+    """
+    row = conn.execute(
+        """SELECT o.id, o.data_origin, o.provider_id, o.provider_model_id,
+                  o.verification_status, o.last_verified
+           FROM offers AS o WHERE o.id = ?""",
+        (offer_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"offer {offer_id} does not exist")
+    if (row["data_origin"] or "REAL") == "SAMPLE":
+        raise HTTPException(status_code=409, detail="SAMPLE offers cannot be verified")
+    provider_model_id = row["provider_model_id"]
+    if provider_model_id is not None:
+        linked = conn.execute(
+            "SELECT 1 FROM provider_models WHERE id = ?", (provider_model_id,)
+        ).fetchone()
+        if linked is None:
+            pm = None
+            if row["provider_id"]:
+                pm = conn.execute(
+                    "SELECT id FROM provider_models WHERE provider_id = ? ORDER BY id LIMIT 1",
+                    (row["provider_id"],),
+                ).fetchone()
+            if pm is not None:
+                provider_model_id = pm["id"]
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"linked provider_model {provider_model_id} does not exist",
+                )
+    elif row["provider_id"]:
+        pm = conn.execute(
+            "SELECT id FROM provider_models WHERE provider_id = ? ORDER BY id LIMIT 1",
+            (row["provider_id"],),
+        ).fetchone()
+        if pm is not None:
+            provider_model_id = pm["id"]
+
+    verified_at = datetime.now(timezone.utc).isoformat()
+    # Chỉ VERIFIED mới gắn mốc xác minh MỚI; các trạng thái khác giữ nguyên
+    # last_verified hiện có. Không đụng quota/rate limit hay credit nào.
+    last_verified = verified_at if status == "VERIFIED" else row["last_verified"]
+    data_origin = row["data_origin"] or "REAL"
+
+    own_transaction = not conn.in_transaction
+    try:
+        if own_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE offers SET verification_status = ?, last_verified = ? WHERE id = ?",
+            (status, last_verified, offer_id),
+        )
+        cursor = conn.execute(
+            """INSERT INTO verification_records
+               (provider_model_id, offer_id, verification_status, method, evidence,
+                note, verified_at, data_origin)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (provider_model_id, offer_id, status, method, evidence, note,
+             verified_at, data_origin),
+        )
+        record_id = cursor.lastrowid
+        if own_transaction:
+            conn.commit()
+    except Exception:
+        if own_transaction:
+            conn.rollback()
+        raise
+    return {
+        "verification_record_id": record_id,
+        "offer_id": offer_id,
+        "provider_model_id": provider_model_id,
+        "verification_status": status,
+        "last_verified": last_verified,
+        "evidence": evidence,
+        "note": note,
+        "verified_at": verified_at,
+        "data_origin": data_origin,
+    }
+
+
 # --- Daily Radar (task 014/015): đọc tín hiệu thật + refresh cục bộ có xác thực ---
 #: Query parameter DUY NHẤT được phép trên GET /api/radar.
 RADAR_QUERY_PARAMS = frozenset({"window"})
@@ -347,6 +750,28 @@ RADAR_QUERY_PARAMS = frozenset({"window"})
 #: publish/verify. Việc tính lại xảy ra khi có request (xem POST refresh bên dưới).
 RADAR_SCHEDULE = RadarSchedule(timezone_name=RADAR_TIMEZONE_NAME)
 
+
+def _durable_schedule_snapshot(conn, moment: datetime) -> dict:
+    """Expose the durable scheduler state without leaking internal fields."""
+    radar_scheduler.ensure_ledger(conn)
+    identity = radar_scheduler.run_identity_for(moment, tz=RADAR_SCHEDULE.local_timezone())
+    row = conn.execute(
+        "SELECT status, attempts, completed_at, lease_expires_at FROM radar_schedule_runs WHERE run_identity = ?",
+        (identity,),
+    ).fetchone()
+    now_local = moment.astimezone(RADAR_SCHEDULE.local_timezone())
+    scheduled = RADAR_SCHEDULE.scheduled_time_local(moment)
+    if now_local >= scheduled:
+        scheduled += timedelta(days=1)
+    return {
+        "run_identity": identity,
+        "status": row["status"] if row else None,
+        "attempts": row["attempts"] if row else 0,
+        "completed_at": row["completed_at"] if row else None,
+        "lease_expires_at": row["lease_expires_at"] if row else None,
+        "due": now_local >= RADAR_SCHEDULE.scheduled_time_local(moment),
+        "next_local_run": scheduled.astimezone(RADAR_SCHEDULE.local_timezone()).isoformat(),
+    }
 
 @app.get("/api/radar")
 def public_radar(request: Request) -> dict:
@@ -366,11 +791,13 @@ def public_radar(request: Request) -> dict:
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     conn = get_connection()
+    now = datetime.now(timezone.utc)
     try:
         result = daily_radar(conn, window=window)
+        durable = _durable_schedule_snapshot(conn, now)
     finally:
         conn.close()
-    return {**result, "schedule": RADAR_SCHEDULE.snapshot()}
+    return {**result, "schedule": {**RADAR_SCHEDULE.snapshot(now), "durable": durable}}
 
 
 @app.post("/api/admin/radar/refresh")
@@ -385,17 +812,24 @@ def admin_radar_refresh(request: Request, window: str = "today") -> dict:
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     conn = get_connection()
+    now = datetime.now(timezone.utc)
     try:
-        result = daily_radar(conn, window=window)
+        scheduled = radar_scheduler.run_daily_radar_once(
+            conn, owner="manual-refresh", now=now, window=window,
+            tz=RADAR_SCHEDULE.local_timezone(),
+        )
+        result = scheduled.get("radar") or daily_radar(conn, window=window)
+        ledger = _durable_schedule_snapshot(conn, now)
     finally:
         conn.close()
-    marked_at = RADAR_SCHEDULE.mark(datetime.now(timezone.utc))
+    marked_at = RADAR_SCHEDULE.mark(now)
     return {
         "status": "REFRESHED",
         "deferred_to_request": True,
         "refreshed_at": marked_at,
         "window": window,
-        "schedule": RADAR_SCHEDULE.snapshot(marked_at),
+        "schedule": {**RADAR_SCHEDULE.snapshot(marked_at), "durable": ledger},
+        "ledger": {**ledger, "reason": scheduled.get("reason", "manual")},
         "radar": result,
     }
 
@@ -834,3 +1268,140 @@ def admin_inbox_articles(request: Request) -> dict:
     finally:
         conn.close()
     return {"articles": articles, "count": len(articles)}
+
+
+# --- Repository Explorer (task r2): catalogue repo GitHub, bounded, no network ---
+# Luật public default: CHỈ trả row REAL + canonical https://github.com +
+# VERIFIED + provenance và license khác rỗng. SAMPLE, URL không phải GitHub,
+# UNVERIFIED/STALE/EXPIRED, thiếu provenance/license tuyệt đối không hiện
+# ở chế độ mặc định. Không có bất kỳ cuộc gọi GitHub API nào — đây là
+# catalogue nội bộ chỉ-đọc.
+#
+#: Query parameter DUY NHẤT được phép trên GET /api/repositories.
+REPOSITORIES_QUERY_PARAMS = frozenset(
+    {"q", "difficulty", "license", "verification_status", "limit"}
+)
+
+#: Trần limit bounded cho GET /api/repositories.
+REPOSITORIES_DEFAULT_LIMIT = 50
+REPOSITORIES_MAX_LIMIT = 100
+
+#: Độ dài tối đa của chuỗi tìm kiếm q.
+REPOSITORIES_MAX_Q_LENGTH = 200
+
+#: Cột public DUY NHẤT của một row repository — SELECT tường minh, không
+#: provenance, không data_origin, không created_at nội bộ.
+PUBLIC_REPOSITORY_FIELDS = (
+    "id", "canonical_url", "name", "purpose", "use_case",
+    "tradeoffs", "license", "updated_at", "difficulty", "verification_status",
+)
+
+#: SELECT tường minh, loại SAMPLE + chỉ canonical https://github.com.
+_REPOSITORIES_BASE_SELECT = """
+SELECT id AS id,
+       canonical_url AS canonical_url,
+       name AS name,
+       purpose AS purpose,
+       use_case AS use_case,
+       tradeoffs AS tradeoffs,
+       license AS license,
+       updated_at AS updated_at,
+       difficulty AS difficulty,
+       verification_status AS verification_status
+FROM repositories
+WHERE (data_origin IS NULL OR data_origin != 'SAMPLE')
+  AND canonical_url LIKE 'https://github.com/%'
+"""
+
+
+def list_repositories(
+    q: str | None = None,
+    difficulty: str | None = None,
+    license: str | None = None,
+    verification_status: str | None = None,
+    limit: str | None = None,
+) -> list[dict]:
+    """Repository Explorer public — cột allowlist, bind parameters, bounded.
+
+    Default (không có verification_status): chỉ VERIFIED + provenance và
+    license khác rỗng. Có verification_status: chế độ xem lịch sử theo
+    trạng thái (vẫn loại SAMPLE, vẫn yêu cầu canonical URL GitHub).
+    Không có cuộc gọi mạng nào tới GitHub.
+    """
+    if difficulty is not None and difficulty not in REPOSITORY_DIFFICULTY:
+        raise HTTPException(status_code=422, detail=f"invalid difficulty: {difficulty!r}")
+    if verification_status is not None and verification_status not in VERIFICATION_STATUS:
+        raise HTTPException(
+            status_code=422, detail=f"invalid verification_status: {verification_status!r}"
+        )
+    if license is not None and not license.strip():
+        raise HTTPException(status_code=422, detail="license must not be empty")
+    query = (q or "").strip()
+    if len(query) > REPOSITORIES_MAX_Q_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"q exceeds {REPOSITORIES_MAX_Q_LENGTH} characters",
+        )
+    effective_limit = REPOSITORIES_DEFAULT_LIMIT
+    if limit is not None:
+        if not str(limit).isdigit():
+            raise HTTPException(status_code=422, detail="limit must be a positive integer")
+        value = int(limit)
+        if value < 1 or value > REPOSITORIES_MAX_LIMIT:
+            raise HTTPException(
+                status_code=422,
+                detail=f"limit must be between 1 and {REPOSITORIES_MAX_LIMIT}",
+            )
+        effective_limit = value
+
+    where: list[str] = []
+    params: list[object] = []
+    if verification_status is not None:
+        # Chế độ xem lịch sử: vẫn giữ luật canonical GitHub + loại SAMPLE.
+        where.append("verification_status = ?")
+        params.append(verification_status)
+    else:
+        # Default public: VERIFIED + provenance/license không được rỗng.
+        where.append("verification_status = 'VERIFIED'")
+        where.append("TRIM(COALESCE(provenance, '')) <> ''")
+        where.append("TRIM(COALESCE(license, '')) <> ''")
+    if query:
+        where.append("(name LIKE ? OR COALESCE(purpose, '') LIKE ? OR COALESCE(use_case, '') LIKE ?)")
+        needle = f"%{query}%"
+        params.extend((needle, needle, needle))
+    if difficulty is not None:
+        where.append("difficulty = ?")
+        params.append(difficulty)
+    if license is not None and license.strip():
+        where.append("license = ?")
+        params.append(license.strip())
+
+    sql = _REPOSITORIES_BASE_SELECT
+    if where:
+        sql += " AND " + " AND ".join(where)
+    sql += " ORDER BY name, id LIMIT ?"
+    params.append(effective_limit)
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/repositories")
+def public_repositories(request: Request) -> list[dict]:
+    """GET /api/repositories — catalogue repo GitHub public, bounded, chỉ-đọc.
+
+    Chỉ nhận query parameter trong allowlist (tham số lạ -> 422); default
+    chỉ trả repo REAL, VERIFIED, có canonical URL GitHub và provenance/
+    license không rỗng. Không có cuộc gọi GitHub API.
+    """
+    filters = dict(request.query_params.multi_items())
+    unknown = sorted(key for key in filters if key not in REPOSITORIES_QUERY_PARAMS)
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"unknown query parameters: {', '.join(unknown)}"
+        )
+    return list_repositories(**filters)

@@ -19,6 +19,7 @@ from .changes import (
     evaluate_verification,
 )
 from .quota import quota_history, record_quota_observation
+from . import scheduler
 
 __version__ = "0.1.0"
 
@@ -31,4 +32,5 @@ __all__ = [
     "evaluate_verification",
     "quota_history",
     "record_quota_observation",
+    "scheduler",
 ]

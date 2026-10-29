@@ -1,3 +1,5 @@
+import React from 'react';
+
 // ExplorerView — nhóm "Free Model Explorer" (Phase 7, phần UI).
 //
 // Gọi GET /api/models và hiển thị đúng những gì backend trả về. Mọi text từ

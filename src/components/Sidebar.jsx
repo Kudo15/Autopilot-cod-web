@@ -1,3 +1,5 @@
+import React from 'react';
+
 export function Sidebar({ groups, activeId, onSelect, open }) {
   return (
     <nav className={`sidebar${open ? ' sidebar-open' : ''}`} aria-label="Điều hướng nhóm nội dung">

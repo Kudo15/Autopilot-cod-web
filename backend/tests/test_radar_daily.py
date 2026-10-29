@@ -53,6 +53,20 @@ def make_vn(timestamp: str) -> str:
     return timestamp
 
 
+def fresh_today_vn_timestamp() -> str:
+    """Mốc PUBLISHED 'hôm nay' giờ VN, hợp lệ cho BẤT KỲ đồng hồ chạy test nào.
+
+    Fixture cũ hardcode ``2026-10-25T00:30:00+07:00``: bài đúng là REAL/PUBLISHED
+    tươi, nhưng khi test chạy sau ngày đó thì mốc 2 ngày tuổi KHÔNG thuộc cửa sổ
+    'today' -> SIGNAL_WEAK (hành vi production ĐÚNG, fixture lỗi). Mốc này luôn nằm
+    trong [nửa đêm VN hôm nay +1s .. now] và tối đa ~10 phút tuổi.
+    """
+    now_vn = datetime.now(timezone.utc).astimezone(VN_TZ)
+    day_start = now_vn.replace(hour=0, minute=0, second=0, microsecond=0)
+    moment = max(now_vn - timedelta(minutes=10), day_start + timedelta(seconds=1))
+    return moment.isoformat()
+
+
 def make_request(
     query: str = "",
     token: str | None = None,
@@ -484,7 +498,9 @@ class ScheduleMarkerTests(unittest.TestCase):
 class RadarRoutesTests(unittest.TestCase):
     """GET /api/radar public chỉ-đọc; POST refresh gọi require_admin TRƯỚC khi mở DB."""
 
-    UPDATE_ARTICLE = "2026-10-25T00:30:00+07:00"
+    def setUp(self) -> None:
+        # Mốc bài PUBLISHED tươi tính theo giờ chạy test — không hardcode ngày.
+        self.UPDATE_ARTICLE = fresh_today_vn_timestamp()
 
     def test_admin_refresh_requires_auth_before_opening_db(self) -> None:
         guard = Mock(side_effect=AssertionError("db opened"))

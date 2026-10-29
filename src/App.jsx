@@ -1,10 +1,13 @@
+import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { GroupView } from './components/GroupView.jsx';
 import { ExplorerView } from './components/ExplorerView.jsx';
+import { PromotionView } from './components/PromotionView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
 import { SearchView } from './components/SearchView.jsx';
+import { RepositoryView } from './components/RepositoryView.jsx';
 import { ArticleDialog } from './components/ArticleDialog.jsx';
 import { CONTENT_GROUPS, DEFAULT_GROUP_ID } from './data/groups.js';
 import { useTheme } from './hooks/useTheme.js';
@@ -13,8 +16,12 @@ import { useBookmarks } from './hooks/useBookmarks.js';
 //: Nhóm dùng API Explorer (GET /api/models) thay cho feed bài viết.
 const EXPLORER_GROUP_ID = 'free-model-explorer';
 
+//: Nhóm Promotion Radar (GET /api/offers) — ưu đãi AI thật, đã xác minh.
+const PROMOTION_GROUP_ID = 'ai-deals';
+
 //: Nhóm Admin Radar dùng API admin (P8b) — token nhập runtime, không nằm trong bundle.
 const ADMIN_GROUP_ID = 'admin-radar';
+const REPOSITORY_GROUP_ID = 'repository-explorer';
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
@@ -36,9 +43,11 @@ export default function App() {
   // các nhóm còn lại giữ nguyên feed bài viết.
   const isExplorer = activeGroup.id === EXPLORER_GROUP_ID;
   const isAdmin = activeGroup.id === ADMIN_GROUP_ID;
+  const isPromotion = activeGroup.id === PROMOTION_GROUP_ID;
+  const isRepository = activeGroup.id === REPOSITORY_GROUP_ID;
 
   useEffect(() => {
-    if (isExplorer || isAdmin) return undefined;
+    if (isExplorer || isAdmin || isPromotion || isRepository) return undefined;
 
     const controller = new AbortController();
 
@@ -64,7 +73,7 @@ export default function App() {
       });
 
     return () => controller.abort();
-  }, [activeId, reloadKey, isExplorer, isAdmin]);
+  }, [activeId, reloadKey, isExplorer, isAdmin, isPromotion, isRepository]);
 
   function handleSelectGroup(id) {
     setActiveId(id);
@@ -93,6 +102,10 @@ export default function App() {
                     <AdminView />
                   ) : isExplorer ? (
                     <ExplorerView group={activeGroup} />
+                  ) : isPromotion ? (
+                    <PromotionView />
+                  ) : isRepository ? (
+                    <RepositoryView />
                   ) : (
             <GroupView
               group={activeGroup}

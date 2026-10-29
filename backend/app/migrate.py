@@ -61,6 +61,15 @@ ARTICLE_STATUS = ("DRAFT", "PENDING_REVIEW", "PUBLISHED")
 #: hoặc QUARANTINED (bị cách ly chờ xử lý).
 INBOX_RUN_STATUS = ("IMPORTED", "QUARANTINED")
 
+#: Trạng thái của một mốc lịch Daily Radar (s1-process-safe-scheduler):
+#: RUNNING (đang có lease) / COMPLETED (thành công) / FAILED (thất bại tạm) /
+#: EXHAUSTED (quá số lần retry tối đa).
+RADAR_SCHEDULE_STATUS = ("RUNNING", "COMPLETED", "FAILED", "EXHAUSTED")
+
+#: Mức độ khó hợp lệ của một repository trong catalogue (task r2) — UNKNOWN
+#: cho phép giữ "chưa biết" thay vì suy đoán.
+REPOSITORY_DIFFICULTY = ("BEGINNER", "INTERMEDIATE", "ADVANCED", "UNKNOWN")
+
 
 def _check(values: tuple[str, ...]) -> str:
     """Chuỗi IN(...) cho CHECK; NULL luôn đi qua CHECK trong SQLite."""
@@ -273,6 +282,44 @@ TABLES_DDL: tuple[str, ...] = (
         data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE'))
     )
     """ % _check(INBOX_RUN_STATUS),
+    # task r2: catalogue explorer các repository GitHub — bảng bổ sung
+    # KHÔNG thuộc 12 bảng MISSION (như scheduled_inbox_runs). Không seed
+    # row công khai nào: row SAMPLE tuyệt đối không được trình bày public.
+    """
+    CREATE TABLE IF NOT EXISTS repositories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        canonical_url TEXT NOT NULL,
+        name TEXT NOT NULL,
+        purpose TEXT,
+        use_case TEXT,
+        tradeoffs TEXT,
+        license TEXT,
+        updated_at TEXT,
+        difficulty TEXT CHECK (difficulty IS NULL OR difficulty %s),
+        provenance TEXT,
+        verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED'
+            CHECK (verification_status IS NULL OR verification_status %s),
+        data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE')),
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """ % (_check(REPOSITORY_DIFFICULTY), _check(VERIFICATION_STATUS)),
+    # s1-process-safe-scheduler: ledger các lần chạy Daily Radar theo lịch —
+    # một dòng mỗi run identity ('YYYY-MM-DD' 07:00 Asia/Ho_Chi_Minh).
+    # Chống race condition giữa nhiều connection/process, lease hữu hạn, bounded retry.
+    """
+    CREATE TABLE IF NOT EXISTS radar_schedule_runs (
+        run_identity TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK (status %s),
+        owner TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        claimed_at TEXT,
+        lease_expires_at TEXT,
+        completed_at TEXT,
+        last_error TEXT,
+        summary TEXT,
+        data_origin TEXT NOT NULL DEFAULT 'REAL' CHECK (data_origin IN ('REAL', 'SAMPLE'))
+    )
+    """ % _check(RADAR_SCHEDULE_STATUS),
 )
 
 #: Index cho các truy vấn thường gặp (luôn CREATE INDEX IF NOT EXISTS).
@@ -313,6 +360,15 @@ INDEXES_DDL: tuple[str, ...] = (
     # sri-001b: query theo lịch theo dõi (thời điểm xử lý) và lọc theo trạng thái run.
     "CREATE INDEX IF NOT EXISTS idx_scheduled_inbox_runs_processed_at ON scheduled_inbox_runs(processed_at)",
     "CREATE INDEX IF NOT EXISTS idx_scheduled_inbox_runs_status ON scheduled_inbox_runs(status)",
+    # task r2: truy vấn public lọc theo trạng thái xác minh; canonical_url
+    # duy nhất trong dữ liệu REAL (row SAMPLE không tham gia ràng buộc).
+    "CREATE INDEX IF NOT EXISTS idx_repositories_verification ON repositories(verification_status)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_repositories_canonical_url
+       ON repositories(canonical_url)
+       WHERE canonical_url IS NOT NULL
+         AND (data_origin IS NULL OR data_origin != 'SAMPLE')""",
+    # s1-process-safe-scheduler: index trên status để truy vấn nhanh trạng thái run
+    "CREATE INDEX IF NOT EXISTS idx_radar_schedule_runs_status ON radar_schedule_runs(status)",
 )
 
 #: Cột nâng cấp cho bảng articles (đã tồn tại từ Phase 3, không có các cột này).
@@ -324,6 +380,13 @@ ARTICLES_UPGRADE_COLUMNS: tuple[tuple[str, str], ...] = (
      "article_status TEXT CHECK (article_status IS NULL OR article_status %s)" % _check(ARTICLE_STATUS)),
     ("normalized_title", "normalized_title TEXT"),
     ("content_hash", "content_hash TEXT"),
+)
+
+#: Cột nâng cấp cho bảng offers — Promotion Radar cần official CTA riêng của
+#: từng offer (CTA không suy ra từ provider/model, offer thiếu CTA tuyệt đối
+#: không được coi là active). Chỉ ALTER thêm, không động dữ liệu có sẵn.
+OFFERS_UPGRADE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("official_url", "official_url TEXT"),
 )
 
 
@@ -361,6 +424,12 @@ def apply_migration() -> Path:
                 for col_name, col_def in ARTICLES_UPGRADE_COLUMNS:
                     if col_name not in cols:
                         conn.execute(f"ALTER TABLE articles ADD COLUMN {col_def}")
+            # Nâng cấp an toàn bảng offers (thêm official CTA cho Promotion Radar).
+            if _table_exists(conn, "offers"):
+                cols = _existing_columns(conn, "offers")
+                for col_name, col_def in OFFERS_UPGRADE_COLUMNS:
+                    if col_name not in cols:
+                        conn.execute(f"ALTER TABLE offers ADD COLUMN {col_def}")
             for idx in INDEXES_DDL:
                 conn.execute(idx)
             conn.execute("PRAGMA foreign_key_check")

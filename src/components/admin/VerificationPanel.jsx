@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Panel xác minh model/provider: ghi POST
 // /api/admin/provider-models/{id}/verification.
 //
@@ -12,6 +14,7 @@ import { useState } from 'react';
 import {
   describeAdminOutcome,
   inputError,
+  submitOfferVerification,
   submitProviderModelVerification,
   VERIFICATION_STATUSES,
 } from './adminClient.js';
@@ -25,7 +28,8 @@ const STATUS_LABELS = {
 };
 
 export function VerificationPanel({ token }) {
-  const [providerModelId, setProviderModelId] = useState('');
+  const [targetType, setTargetType] = useState('provider_model');
+  const [targetId, setTargetId] = useState('');
   const [status, setStatus] = useState(VERIFICATION_STATUSES[0]);
   const [evidence, setEvidence] = useState('');
   const [note, setNote] = useState('');
@@ -36,16 +40,19 @@ export function VerificationPanel({ token }) {
     setPending(true);
     setOutcome(null);
     try {
-      const trimmedId = providerModelId.trim();
+      const trimmedId = targetId.trim();
       if (!/^\d+$/.test(trimmedId) || Number(trimmedId) <= 0) {
-        throw inputError('Mã provider_model phải là số nguyên dương.');
+        throw inputError(`Mã ${targetType} phải là số nguyên dương.`);
       }
       const id = Number(trimmedId);
-      const result = await submitProviderModelVerification(token, id, status, evidence, note);
+      const isOffer = targetType === 'offer';
+      const result = isOffer
+        ? await submitOfferVerification(token, id, status, evidence, note)
+        : await submitProviderModelVerification(token, id, status, evidence, note);
       setOutcome({
         level: 'ok',
         text:
-          `Đã ghi bản xác minh #${result?.verification_record_id ?? '?'} cho provider_model #${id}` +
+          `Đã ghi bản xác minh #${result?.verification_record_id ?? '?'} cho ${targetType} #${id}` +
           ` (trạng thái: ${result?.verification_status ?? status}).`,
       });
       setEvidence('');
@@ -76,13 +83,20 @@ export function VerificationPanel({ token }) {
         }}
       >
         <label className="explorer-filter">
-          Mã provider_model (bắt buộc)
+          Đối tượng xác minh
+          <select value={targetType} onChange={(event) => setTargetType(event.target.value)}>
+            <option value="provider_model">provider_model (Model & Provider)</option>
+            <option value="offer">offer (Promotion Radar)</option>
+          </select>
+        </label>
+        <label className="explorer-filter">
+          {targetType === 'offer' ? 'Mã offer (bắt buộc)' : 'Mã provider_model (bắt buộc)'}
           <input
             type="number"
             min="1"
             step="1"
-            value={providerModelId}
-            onChange={(event) => setProviderModelId(event.target.value)}
+            value={targetId}
+            onChange={(event) => setTargetId(event.target.value)}
             placeholder="vd. 1"
             required
           />
@@ -115,7 +129,7 @@ export function VerificationPanel({ token }) {
             placeholder="Đã kiểm trang chính thức…"
           />
         </label>
-        <button type="submit" className="btn" disabled={pending || providerModelId.trim() === ''}>
+        <button type="submit" className="btn" disabled={pending || targetId.trim() === ''}>
           {pending ? 'Đang ghi…' : 'Ghi bản xác minh'}
         </button>
       </form>

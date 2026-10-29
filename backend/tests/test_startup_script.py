@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEV_SCRIPT = ROOT / "scripts" / "dev.ps1"
 ENV_EXAMPLE = ROOT / ".env.example"
+VITE_CONFIG = ROOT / "vite.config.js"
 
 # Marker nghi secret, GHÉP TỪ MẢNH RỜI có chủ đích: nếu để nguyên văn chuỗi
 # "sk" + "-" trong file này thì checks/p4.py (quét chuỗi nghi secret trên
@@ -40,6 +41,7 @@ class StartupScriptContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.script = read_text(DEV_SCRIPT)
         cls.lines = cls.script.splitlines()
+        cls.vite_config = read_text(VITE_CONFIG)
 
     def test_script_exists_and_is_not_empty(self) -> None:
         self.assertTrue(DEV_SCRIPT.is_file(), "scripts/dev.ps1 phải tồn tại")
@@ -73,6 +75,30 @@ class StartupScriptContractTests(unittest.TestCase):
             self.script,
             r"'python',\s*'-m',\s*'backend\.app\.migrate'",
         )
+
+    def test_frontend_proxy_follows_the_selected_backend_port(self) -> None:
+        self.assertIn("VITE_BACKEND_PORT", self.vite_config)
+        self.assertRegex(
+            self.script,
+            r"\$env:VITE_BACKEND_PORT\s*=\s*\"\$BackendPort\"",
+        )
+
+    def test_python_preflight_falls_back_to_project_venv(self) -> None:
+        """Hợp đồng Python 3.13 theo 3 bậc: uv → .venv dự án → problem rõ ràng."""
+        body = self.script.split("function Invoke-Preflight", 1)[1].split("\nfunction ", 1)[0]
+        # Bậc 1: `uv python find 3.13` — tin exit code của uv (exit 0 = đã tìm thấy
+        # Python 3.13; KHÔNG đòi đường dẫn in ra phải chứa chữ "3.13").
+        self.assertIn("'python', 'find', '3.13'", body)
+        self.assertRegex(body, r"if \(\$pyProbe\.Code -eq 0\) \{")
+        # Bậc 2: uv không khả dụng (thiếu uv hoặc find fail) → fallback đọc phiên
+        # bản python.exe của .venv dự án, yêu cầu đúng 3.13.
+        self.assertIn("uv python find 3.13 khong kha dung", body)
+        self.assertIn("if (-not $python313Ready -and (Test-Path -LiteralPath $venvPython))", body)
+        self.assertIn("sys.version_info.major", body)
+        self.assertIn("-match '^3\\.13'", body)
+        self.assertIn("Python 3.13 project venv", body)
+        # Bậc 3: cả hai đường đều không chứng minh được → problem rõ ràng.
+        self.assertIn("Thieu Python 3.13 cho du an", body)
 
     def test_no_push_deploy_remote_or_destructive_cleanup(self) -> None:
         lowered = self.script.lower()

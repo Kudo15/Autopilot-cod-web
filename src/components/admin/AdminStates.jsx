@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Các trạng thái dùng chung cho panel admin: loading / error+retry / empty.
 // Mọi text từ API được render như text node của React (không dựng HTML).
 import { describeAdminError } from './adminClient.js';

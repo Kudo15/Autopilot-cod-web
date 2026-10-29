@@ -32,6 +32,8 @@ export const ADMIN_ENDPOINTS = {
   articleReview: (articleId) => `/api/admin/articles/${encodeURIComponent(String(articleId))}/review`,
   providerModelVerification: (providerModelId) =>
     `/api/admin/provider-models/${encodeURIComponent(String(providerModelId))}/verification`,
+  offerVerification: (offerId) =>
+    `/api/admin/offers/${encodeURIComponent(String(offerId))}/verification`,
 };
 
 //: Chi tiết lỗi server tối đa được hiển thị (không cắt giữa ký tự).
@@ -181,6 +183,33 @@ export function submitProviderModelVerification(
     throw new AdminRequestError('invalid-evidence', 0, 'Cần bằng chứng hoặc ghi chú cụ thể.');
   }
   return requestJson(ADMIN_ENDPOINTS.providerModelVerification(providerModelId), {
+    token,
+    method: 'POST',
+    body: payload,
+    fetchImpl,
+  });
+}
+
+export function submitOfferVerification(
+  token,
+  offerId,
+  status,
+  evidence,
+  note,
+  fetchImpl
+) {
+  if (!VERIFICATION_STATUSES.includes(status)) {
+    throw new AdminRequestError('invalid-status', 0, `Trạng thái xác minh không hợp lệ: ${status}.`);
+  }
+  const payload = { status };
+  const trimmedEvidence = typeof evidence === 'string' ? evidence.trim() : '';
+  const trimmedNote = typeof note === 'string' ? note.trim() : '';
+  if (trimmedEvidence) payload.evidence = trimmedEvidence;
+  if (trimmedNote) payload.note = trimmedNote;
+  if (!trimmedEvidence && !trimmedNote) {
+    throw new AdminRequestError('invalid-evidence', 0, 'Cần bằng chứng hoặc ghi chú cụ thể.');
+  }
+  return requestJson(ADMIN_ENDPOINTS.offerVerification(offerId), {
     token,
     method: 'POST',
     body: payload,

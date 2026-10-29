@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Panel registry nguồn: đọc GET /api/admin/sources và hiển thị CHỈ các cột an
 // toàn mà backend khai báo (ADMIN_SOURCE_FIELDS). Không bao giờ render payload
 // thô, provenance hay nội dung nội bộ của nguồn.

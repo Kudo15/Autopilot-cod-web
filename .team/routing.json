@@ -1,0 +1,34 @@
+{
+  "_comment": "Bảng định tuyến vai -> harness/model của đội agent. Worker/reviewer chạy trong các phiên Hermes GUI trực tiếp; model/provider để trống sẽ kế thừa cấu hình Hermes hiện tại. harness: 'hermes-gui' | 'codex-internal'.",
+  "codex": {
+    "model": "gpt-5.6-luna",
+    "effort": "medium",
+    "_comment": "Codex global override for GUI planner sessions and codex exec. Change only these two values to retarget Codex without touching Hermes routes."
+  },
+  "planner": {
+    "harness": "codex-internal",
+    "_why": "Planner luôn ở Codex — định tuyến đi đâu cũng phải quay lại đây điều phối, đi xa chỉ tốn thêm token."
+  },
+  "worker": {
+    "harness": "hermes-gui",
+    "profile": "default",
+    "_modelPolicy": "inherit-hermes-main-and-fallbacks",
+    "workspace": "worktree:D:\\anhvuxd_2026\\VUHOCAI\\Project\\Autopilot cod web",
+    "priority": 2,
+    "maxRuntime": "20m",
+    "autoDispatch": false
+  },
+  "reviewer": {
+    "harness": "hermes-gui",
+    "profile": "default",
+    "_modelPolicy": "inherit-hermes-main-and-fallbacks",
+    "workspace": "scratch",
+    "priority": 1,
+    "maxRuntime": "20m",
+    "autoDispatch": false
+  },
+  "quick": {
+    "harness": "codex-internal",
+    "_why": "Tác vụ dưới ~1 phút hoặc cần context hội thoại — chạy nội bộ Codex, không mở worker GUI."
+  }
+}

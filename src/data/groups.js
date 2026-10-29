@@ -7,6 +7,7 @@ export const CONTENT_GROUPS = [
   { id: 'free-model-explorer', name: 'Free Model Explorer' },
   { id: 'ai-deals', name: 'AI Deals & Promotions' },
   { id: 'provider-comparison', name: 'Provider Comparison' },
+  { id: 'repository-explorer', name: 'Repository Explorer' },
   { id: 'admin-radar', name: 'Admin Radar' }
 ];
 

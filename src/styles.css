@@ -53,6 +53,142 @@ body {
   min-height: 100vh;
 }
 
+/* ---------- Promotion Radar (task r1) ---------- */
+.promotion-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.offer-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.offer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--bg-panel);
+}
+
+.offer-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.offer-provider {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.offer-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.offer-description {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.offer-terms {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.offer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.offer-eligibility {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eligibility-tag {
+  font-size: 0.76rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.eligibility-free {
+  border-color: #2e7d32;
+  color: #81c784;
+}
+
+.offer-status-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.offer-deadline {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.offer-card-actions {
+  margin-top: 8px;
+}
+
+.offer-cta-btn {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+  width: 100%;
+  padding: 8px 12px;
+}
+
+.offer-no-cta {
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* ---------- Repository Explorer (task r2) ---------- */
+.repository-filters { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; align-items: end; }
+.repository-filters label { display: grid; gap: .4rem; font-size: .85rem; color: var(--muted, #667085); }
+.repository-filters .promotion-search { margin: 0; }
+.repository-error { display: grid; gap: .5rem; color: var(--danger, #b42318); }
+.repo-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.repo-card { border: 1px solid var(--border-color, #d9dee8); border-radius: 14px; padding: 1rem; background: var(--surface, #fff); }
+.repo-card h2 { margin: .35rem 0 .7rem; font-size: 1.1rem; overflow-wrap: anywhere; }
+.repo-card p { margin: .4rem 0; font-size: .9rem; }
+.repo-card__meta { display: flex; gap: .5rem; flex-wrap: wrap; font-size: .78rem; color: var(--muted, #667085); }
+.repo-card__meta span { border: 1px solid var(--border-color, #d9dee8); border-radius: 999px; padding: .1rem .6rem; }
+.repo-card__usecase, .repo-card__tradeoffs { color: var(--muted, #667085); }
+.repo-card__footer { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: .75rem; }
+.repo-card__updated { color: var(--muted, #667085); font-size: .8rem; }
+.repo-card__link { display: inline-block; }
+
 .app-body {
   display: flex;
   flex: 1;
@@ -577,6 +713,8 @@ body {
 
 /* ---------- Responsive (mobile) ---------- */
 @media (max-width: 760px) {
+  .app-header { flex-wrap: wrap; }
+
   .sidebar-toggle {
     display: inline-block;
   }
@@ -585,7 +723,7 @@ body {
     display: none;
   }
 
-  .header-search { order: 3; width: 100%; }
+  .header-search { order: 3; width: 100%; min-width: 0; }
   .header-search input { flex: 1; width: auto; }
 
   .app-body {
