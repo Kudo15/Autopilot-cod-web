@@ -434,3 +434,18 @@ Task o1-startup continuation — role:coordinator — harness:local startup evid
 
 Continuation ruling — 2026-10-29
 - Live RSS and startup environment gates are closed by fresh evidence. Overall release remains **NOT_READY** because independent Hermes reviewer verdicts for Q2, S1+R2, R1, and O1 remain `NOT_VERIFIED`; no unsupported approval claimed.
+
+Task a1-final-independent-review — khuôn mẫu: Code Review Agent + Code Reviewer — biến thể: independent read-only recovery review that must reproduce fresh local evidence and give an explicit verdict for the stalled gates.
+Ruling: dispatch exactly one bounded read-only reviewer before any product change — why: the 2026-10-29 baseline confirms functional surfaces, but no coordinator evidence may replace an independent gate verdict — cost if wrong: an approval without independent evidence would violate the Charter.
+Task a1-final-independent-review — role:reviewer — harness:hermes-gui — source:cli — pid:25968 — 2026-10-29.
+Task a1-final-independent-review — NOT_VERIFIED: reviewer independently reproduced backend `454 tests OK`, production build exit 0, Playwright `4 passed`, and referee P3 `13/13 PASS`, then continued broad read-only inspection for more than the bounded review window without emitting the required `VERDICT`. Session was stopped without a code/database mutation.
+Ruling: retain Q2/S1+R2/R1/O1 as NOT_VERIFIED — why: partial evidence is not an explicit independent review verdict — cost if wrong: treating a stalled review as approval would violate the Charter and Master Mission.
+
+Task s2-windows-scheduler — khuôn mẫu: Devops Engineer + Test Automation Expert — biến thể: local-only, durable one-shot scheduler runner plus idempotent Windows Task Scheduler registration script; TDD and no actual task registration by the worker.
+Ruling: user explicitly waived the independent reviewer-verdict requirement and authorized a per-user 07:00 local Scheduled Task; implement/verify the repository artefact first, then register from the coordinator — cost if wrong: a bad runner could make the task fail locally but cannot publish or contact external sources.
+
+Task a1-final-independent-review — role:reviewer — harness:hermes-gui — source:cli — pid:25968 — 2026-10-29T13:30:45.347Z
+
+Task s2-windows-scheduler — role:worker — harness:hermes-gui — source:cli — pid:27356 — 2026-10-29T13:44:49.906Z
+Task s2-windows-scheduler — completed evidence: focused scheduler tests `31/31`, full backend suite `466/466`, temporary-DB one-shot runner exit `0` (SIGNAL_WEAK with zero content, no network), PowerShell parser `OK`; user-authorized per-user task `VuHocAIRadar-Daily` registered at 07:00 and a manual Scheduler trigger completed with `LastTaskResult=0` at 2026-10-29 21:08 local.
+Ruling: task-level reviewer verdict is waived by explicit user decision; retain code/test/runtime evidence and do not represent it as an independent review — cost if wrong: release evidence has a lower assurance level than the original Charter.
