@@ -1,5 +1,16 @@
 # PHASE_REPORT — Vũ Học AI Radar v1.0 (localhost)
 
+## Beta update 2026-10-29 (đọc trước)
+
+Kết quả Beta: **PASS_WITH_WARNINGS (BETA LOCAL)** — hồ sơ đầy đủ: [`FINAL_ACCEPTANCE_BETA.md`](FINAL_ACCEPTANCE_BETA.md).
+Bản cập nhật này **supersedes** các con số trong phần dưới (giữ nguyên làm lịch sử, không xoá):
+Node 22.11 → **26.13.0** (build không còn cảnh báo Vite Node floor); full backend **330 tests** →
+**466 tests OK** (kèm ResourceWarning SQLite); Daily Radar mốc 07:00 *trong bộ nhớ* (deferred-to-request)
+→ task bền **`VuHocAIRadar-Daily`** trên Task Scheduler (Ready; manual trigger 2026-10-29 21:08,
+LastTaskResult 0; next run 2026-10-30 07:00 — **NOT_VERIFIED** tới khi có chạy tự động thật).
+Verdict reviewer độc lập: **WAIVED** theo user (không phải PASS); logs/transcripts nội bộ giữ lại
+(rủi ro public-repo); không production/deploy.
+
 Báo cáo giải phóng bản localhost, cấu trúc theo mục 13 của `docs/MISSION.md`. Mọi con số là kết quả
 **đo lại trong phiên này** (nhánh `autopilot/run-live`, HEAD `fb3cb14`), có lệnh để tự tái lập; phần
 chưa kiểm chứng ghi **NOT_VERIFIED**.

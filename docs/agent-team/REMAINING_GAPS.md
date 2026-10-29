@@ -1,5 +1,16 @@
 # Remaining Gaps — fresh evidence register
 
+## Beta update 2026-10-29 (đọc trước)
+
+Kết quả Beta: **PASS_WITH_WARNINGS (BETA LOCAL)** — hồ sơ đầy đủ: [`../FINAL_ACCEPTANCE_BETA.md`](../FINAL_ACCEPTANCE_BETA.md).
+Bản cập nhật này **supersedes** các con số phiên 2026-10-27 dưới đây (giữ nguyên làm lịch sử, không xoá):
+Node 22.11.0 → **26.13.0** (build không còn cảnh báo Vite Node floor); full backend **453/453** →
+**466 tests OK** (kèm ResourceWarning SQLite); Playwright **3 passed** → **4 passed**; scheduler
+in-memory (deferred-to-request) → task bền **`VuHocAIRadar-Daily`** trên Task Scheduler (Ready;
+manual trigger 2026-10-29 21:08, LastTaskResult 0; next run 2026-10-30 07:00 — **NOT_VERIFIED** cho
+chạy tự động tương lai). Verdict reviewer độc lập: **WAIVED** theo user — các dòng
+"IMPLEMENTED; REVIEW NOT_VERIFIED" bên dưới **không** tự đổi thành PASS.
+
 Ngày: 2026-10-29 (SEA Standard Time, UTC+07)  
 Worktree: `D:\anhvuxd_2026\VUHOCAI\Project\Autopilot cod web`  
 Harness: Hermes GUI, source `cli`, bounded continuation pid 26252  

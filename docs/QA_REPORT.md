@@ -1,5 +1,15 @@
 # QA_REPORT — Kiểm thử và xác minh Vũ Học AI Radar v1.0 (localhost)
 
+## Beta update 2026-10-29 (đọc trước)
+
+Kết quả Beta: **PASS_WITH_WARNINGS (BETA LOCAL)** — hồ sơ đầy đủ: [`FINAL_ACCEPTANCE_BETA.md`](FINAL_ACCEPTANCE_BETA.md).
+Bản cập nhật này **supersedes** các con số phiên 2026-10-25 dưới đây (giữ nguyên làm lịch sử, không xoá):
+Node 22.11.0 → **26.13.0**; full backend **330 tests** → **466 tests OK** (kèm ResourceWarning SQLite,
+không chặn); build PASS không còn cảnh báo Node; browser E2E **Playwright 4 passed**; focused
+runner/scheduler **31 OK**; scheduler **`VuHocAIRadar-Daily`** Ready, manual trigger 2026-10-29 21:08
+LastTaskResult 0, next run 2026-10-30 07:00 (**NOT_VERIFIED** cho chạy tự động tương lai).
+Verdict reviewer độc lập: **WAIVED** theo user (không phải PASS).
+
 Báo cáo chất lượng của bản **localhost** tại nhánh `autopilot/run-live`, HEAD `fb3cb14`
 (2026-10-25 05:46 +0700). Toàn bộ lệnh bên dưới được **chạy lại từ đầu trong phiên này**; kèm lệnh
 để tự tái lập. Mọi hạng mục không thể kiểm chứng được ghi rõ **NOT_VERIFIED** hoặc **BLOCKED** — không
